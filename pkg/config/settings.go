@@ -23,6 +23,7 @@ type AppConfig struct {
 	HttpAuthProtocol      string `json:"httpAuthProtocol"`
 	PacFileLocation       string `json:"pacFileLocation"`
 	AutoStart             bool   `json:"autostart"`
+	StartMinimized        bool   `json:"startMinimized"`
 	AutoDetect            bool   `json:"autodetect"`
 	LaunchOnStartup       bool   `json:"launchOnStartup"`
 	ApiPort               int    `json:"apiPort,omitempty"`

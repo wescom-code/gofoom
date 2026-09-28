@@ -114,7 +114,7 @@ func (u *AppUI) Run(startMinimized bool) error {
 	statusItem := trayMenu.Add("Status: STOPPED")
 	statusItem.SetEnabled(false)
 
-	var autoStartItem, startupItem *application.MenuItem
+	var autoStartItem, startMinItem, startupItem *application.MenuItem
 
 	toggleItem := trayMenu.Add("Start Proxy")
 	toggleItem.OnClick(func(ctx *application.Context) {
@@ -125,7 +125,7 @@ func (u *AppUI) Run(startMinimized bool) error {
 			u.proxyServer.UpdateConfig(sc)
 			_ = u.proxyServer.Start()
 		}
-		u.updateTrayState(tray, statusItem, toggleItem, autoStartItem, startupItem)
+		u.updateTrayState(tray, statusItem, toggleItem, autoStartItem, startMinItem, startupItem)
 	})
 
 	trayMenu.Add("Auto-Detect Proxy").OnClick(func(ctx *application.Context) {
@@ -152,6 +152,14 @@ func (u *AppUI) Run(startMinimized bool) error {
 		autoStartItem.SetChecked(cur.AutoStart)
 	})
 
+	startMinItem = trayMenu.AddCheckbox("Start Minimized to Tray", u.configMgr.Get().StartMinimized)
+	startMinItem.OnClick(func(ctx *application.Context) {
+		cur := u.configMgr.Get()
+		cur.StartMinimized = !cur.StartMinimized
+		_ = u.configMgr.Update(cur)
+		startMinItem.SetChecked(cur.StartMinimized)
+	})
+
 	startupItem = trayMenu.AddCheckbox("Launch at Windows Startup", sysproxy.IsWindowsStartupEnabled())
 	startupItem.OnClick(func(ctx *application.Context) {
 		cur := sysproxy.IsWindowsStartupEnabled()
@@ -173,7 +181,7 @@ func (u *AppUI) Run(startMinimized bool) error {
 	})
 
 	tray.SetMenu(trayMenu)
-	u.updateTrayState(tray, statusItem, toggleItem, autoStartItem, startupItem)
+	u.updateTrayState(tray, statusItem, toggleItem, autoStartItem, startMinItem, startupItem)
 
 	// Left click on tray toggles the window
 	tray.OnClick(func() {
@@ -202,14 +210,14 @@ func (u *AppUI) Run(startMinimized bool) error {
 		for range ticker.C {
 			stats := u.proxyServer.GetStats()
 			app.Event.Emit("gofoom:stats", stats)
-			u.updateTrayState(tray, statusItem, toggleItem, autoStartItem, startupItem)
+			u.updateTrayState(tray, statusItem, toggleItem, autoStartItem, startMinItem, startupItem)
 		}
 	}()
 
 	return app.Run()
 }
 
-func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggleItem, autoStartItem, startupItem *application.MenuItem) {
+func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggleItem, autoStartItem, startMinItem, startupItem *application.MenuItem) {
 	running := u.proxyServer.IsRunning()
 	status := "STOPPED"
 	toggleLabel := "Start Proxy"
@@ -222,6 +230,9 @@ func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggle
 	toggleItem.SetLabel(toggleLabel)
 	if autoStartItem != nil {
 		autoStartItem.SetChecked(cfg.AutoStart)
+	}
+	if startMinItem != nil {
+		startMinItem.SetChecked(cfg.StartMinimized)
 	}
 	if startupItem != nil {
 		startupItem.SetChecked(sysproxy.IsWindowsStartupEnabled())

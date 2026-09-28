@@ -80,7 +80,7 @@ func main() {
 
 		appUI := ui.NewAppUI(proxySrv, cfgMgr, apiSrv, build.IconBytes, distFS)
 		log.Printf("Launching Gofoom GUI (Wails v3)...")
-		startMinimized := *minimized || appCfg.AutoStart
+		startMinimized := *minimized || appCfg.StartMinimized
 		if err := appUI.Run(startMinimized); err != nil {
 			log.Fatalf("GUI error: %v", err)
 		}

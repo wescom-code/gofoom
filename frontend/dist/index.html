@@ -79,6 +79,120 @@
     .log-warn { color: #fbbf24; }
 
     .toast { position: fixed; bottom: 20px; right: 20px; background: #1e293b; border: 1px solid #3b82f6; color: #fff; padding: 10px 16px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none; font-size: 13px; }
+
+    /* Preferences Modal Dialog */
+    .modal-overlay {
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(4px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .modal-dialog {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      width: 90%;
+      max-width: 480px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+      transform: translateY(-15px) scale(0.98);
+      transition: transform 0.2s ease;
+      overflow: hidden;
+    }
+    .modal-overlay.active .modal-dialog {
+      transform: translateY(0) scale(1);
+    }
+    .modal-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--card-border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: #f1f5f9;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .modal-close {
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      font-size: 22px;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+      border-radius: 4px;
+    }
+    .modal-close:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.1);
+    }
+    .modal-body {
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .pref-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 8px;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .pref-option:hover {
+      border-color: var(--primary);
+      background: #131d33;
+    }
+    .pref-option input[type="checkbox"] {
+      width: 18px;
+      height: 18px;
+      margin-top: 2px;
+      accent-color: var(--primary);
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .pref-info {
+      display: flex;
+      flex-direction: column;
+    }
+    .pref-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f8fafc;
+    }
+    .pref-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 3px;
+      line-height: 1.4;
+    }
+    .modal-footer {
+      padding: 14px 20px;
+      border-top: 1px solid var(--card-border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      background: rgba(15, 23, 42, 0.4);
+    }
   </style>
 </head>
 <body>
@@ -89,6 +203,7 @@
       <span id="brandSubtitle">v1.0.0</span>
     </div>
     <div style="display: flex; gap: 10px; align-items: center;">
+      <button class="btn btn-outline btn-sm" onclick="openPrefModal()">⚙ Preferences</button>
       <div id="statusBadge" class="status-badge status-stopped">
         <span class="dot"></span>
         <span id="statusText">STOPPED</span>
@@ -120,10 +235,7 @@
     <div class="card">
       <div class="card-title">
         <span>Proxy Configuration</span>
-        <div style="display:flex; gap:6px;">
-          <button class="btn btn-outline btn-sm" onclick="autoDetect()">Auto-Detect System</button>
-          <button class="btn btn-outline btn-sm" onclick="testConnection()">Test Connection</button>
-        </div>
+        <button class="btn btn-outline btn-sm" onclick="autoDetect()">Auto-Detect System</button>
       </div>
 
       <div class="form-row">
@@ -184,18 +296,10 @@
 
       <div class="form-group">
         <label>Test URL</label>
-        <input type="text" id="testUrl" value="https://example.com">
-      </div>
-
-      <div class="form-group" style="margin-top: 14px; border-top: 1px dashed var(--card-border); padding-top: 12px;">
-        <label class="checkbox-group">
-          <input type="checkbox" id="autoStartProxy">
-          <span>Auto-start proxy on app launch (minimize to tray)</span>
-        </label>
-        <label class="checkbox-group" style="margin-top: 8px;">
-          <input type="checkbox" id="launchOnStartup">
-          <span>Launch Gofoom at Windows startup</span>
-        </label>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="testUrl" value="https://example.com" style="flex: 1;">
+          <button class="btn btn-outline" style="white-space: nowrap;" onclick="testConnection()">Test Connection</button>
+        </div>
       </div>
 
       <div class="actions">
@@ -216,6 +320,43 @@
     </div>
   </div>
 
+  <!-- Preferences Modal Dialog -->
+  <div id="prefModal" class="modal-overlay" onclick="onBackdropClick(event)">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">⚙ Application Preferences</div>
+        <button class="modal-close" onclick="closePrefModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <label class="pref-option">
+          <input type="checkbox" id="autoStartProxy">
+          <div class="pref-info">
+            <span class="pref-label">Auto-start proxy on app launch</span>
+            <span class="pref-desc">Automatically starts the proxy listening engine when Gofoom launches.</span>
+          </div>
+        </label>
+        <label class="pref-option">
+          <input type="checkbox" id="startMinimized">
+          <div class="pref-info">
+            <span class="pref-label">Start minimized to system tray</span>
+            <span class="pref-desc">Launches Gofoom quietly into the system tray without opening the main window.</span>
+          </div>
+        </label>
+        <label class="pref-option">
+          <input type="checkbox" id="launchOnStartup">
+          <div class="pref-info">
+            <span class="pref-label">Launch Gofoom at Windows startup</span>
+            <span class="pref-desc">Automatically registers Gofoom to start in the background when logging into Windows.</span>
+          </div>
+        </label>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline" onclick="closePrefModal()">Cancel</button>
+        <button class="btn btn-primary" onclick="savePrefAndClose()">Save Preferences</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast"></div>
 
   <script>
@@ -230,6 +371,31 @@
       t.style.display = "block";
       setTimeout(() => { t.style.display = "none"; }, 3000);
     }
+
+    function openPrefModal() {
+      document.getElementById("prefModal").classList.add("active");
+    }
+
+    function closePrefModal() {
+      document.getElementById("prefModal").classList.remove("active");
+    }
+
+    function onBackdropClick(e) {
+      if (e.target.id === "prefModal") {
+        closePrefModal();
+      }
+    }
+
+    async function savePrefAndClose() {
+      await saveConfig();
+      closePrefModal();
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closePrefModal();
+      }
+    });
 
     function addLog(ts, level, msg) {
       const box = document.getElementById("logBox");
@@ -276,6 +442,7 @@
           document.getElementById("proxyPass").value = cfg.proxyPassword || "";
           document.getElementById("testUrl").value = cfg.proxyTestUrl || "https://example.com";
           document.getElementById("autoStartProxy").checked = cfg.autostart ?? false;
+          document.getElementById("startMinimized").checked = cfg.startMinimized ?? false;
           document.getElementById("launchOnStartup").checked = cfg.launchOnStartup ?? false;
           onProxyTypeChange();
           onUseCurrentCredsChange();
@@ -297,6 +464,7 @@
         proxyPassword: document.getElementById("proxyPass").value,
         proxyTestUrl: document.getElementById("testUrl").value,
         autostart: document.getElementById("autoStartProxy").checked,
+        startMinimized: document.getElementById("startMinimized").checked,
         launchOnStartup: document.getElementById("launchOnStartup").checked
       };
 
