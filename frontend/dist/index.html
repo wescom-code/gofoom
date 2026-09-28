@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gofoom - Proxy Facade</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --card-border: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+      --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
+    body { background: var(--bg); color: var(--text); padding: 20px; font-size: 14px; user-select: none; }
+    
+    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--card-border); }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .brand h1 { font-size: 20px; font-weight: 700; color: #60a5fa; }
+    .brand span { font-size: 12px; color: var(--text-muted); background: #1e293b; padding: 2px 8px; border-radius: 12px; }
+    
+    .status-badge { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 20px; }
+    .status-running { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+    .status-stopped { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .status-running .dot { background: #10b981; box-shadow: 0 0 8px #10b981; }
+    .status-stopped .dot { background: #94a3b8; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
+    .stat-card { background: var(--card-bg); border: 1px solid var(--card-border); padding: 12px; border-radius: 8px; text-align: center; }
+    .stat-value { font-size: 18px; font-weight: 700; color: #f1f5f9; margin-top: 4px; }
+    .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+
+    .main-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 18px; }
+    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+
+    .form-group { margin-bottom: 14px; }
+    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+    input[type="text"], input[type="password"], input[type="number"], select {
+      width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid var(--card-border);
+      border-radius: 6px; color: #fff; font-size: 13px; outline: none; transition: border-color 0.2s;
+    }
+    input:focus, select:focus { border-color: var(--primary); }
+    
+    .checkbox-group { display: flex; align-items: center; gap: 8px; margin-top: 6px; cursor: pointer; }
+    .checkbox-group input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-success { background: var(--success); color: #fff; }
+    .btn-danger { background: var(--danger); color: #fff; }
+    .btn-outline { background: transparent; border: 1px solid var(--card-border); color: #cbd5e1; }
+    .btn-outline:hover { background: #334155; }
+    .btn-sm { padding: 4px 10px; font-size: 11px; }
+
+    .actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 15px; border-top: 1px solid var(--card-border); padding-top: 15px; }
+
+    /* Terminal logs */
+    .log-container {
+      background: #090d16; border: 1px solid #1e293b; border-radius: 6px; height: 150px;
+      overflow-y: auto; padding: 8px; font-family: "Consolas", "Courier New", monospace; font-size: 11px;
+    }
+    .log-line { margin-bottom: 3px; line-height: 1.4; word-break: break-all; }
+    .log-time { color: #64748b; }
+    .log-info { color: #38bdf8; }
+    .log-err { color: #f87171; }
+    .log-200 { color: #4ade80; }
+    .log-warn { color: #fbbf24; }
+
+    .toast { position: fixed; bottom: 20px; right: 20px; background: #1e293b; border: 1px solid #3b82f6; color: #fff; padding: 10px 16px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none; font-size: 13px; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <h1>Gofoom</h1>
+      <span>v1.0.0 (Go + Wails v3)</span>
+    </div>
+    <div style="display: flex; gap: 10px; align-items: center;">
+      <div id="statusBadge" class="status-badge status-stopped">
+        <span class="dot"></span>
+        <span id="statusText">STOPPED</span>
+      </div>
+      <button id="btnToggleServer" class="btn btn-success" onclick="toggleServer()">Start Server</button>
+    </div>
+  </header>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Active Conns</div>
+      <div class="stat-value" id="statActive">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Requests</div>
+      <div class="stat-value" id="statRequests">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Bytes In</div>
+      <div class="stat-value" id="statIn">0 KB</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Bytes Out</div>
+      <div class="stat-value" id="statOut">0 KB</div>
+    </div>
+  </div>
+
+  <div class="main-grid">
+    <div class="card">
+      <div class="card-title">
+        <span>Proxy Configuration</span>
+        <div style="display:flex; gap:6px;">
+          <button class="btn btn-outline btn-sm" onclick="autoDetect()">Auto-Detect System</button>
+          <button class="btn btn-outline btn-sm" onclick="testConnection()">Test Connection</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Upstream Proxy Type</label>
+          <select id="proxyType" onchange="onProxyTypeChange()">
+            <option value="DIRECT">DIRECT (No upstream proxy)</option>
+            <option value="HTTP">HTTP (NTLM / Kerberos / Basic)</option>
+            <option value="SOCKS5">SOCKS 5</option>
+            <option value="SOCKS4">SOCKS 4 / 4a</option>
+            <option value="PAC">PAC (Proxy Auto-Config)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Local Proxy Port</label>
+          <input type="number" id="localPort" value="3129">
+        </div>
+      </div>
+
+      <!-- Host & Port for HTTP/SOCKS -->
+      <div id="hostPortSection" class="form-row">
+        <div class="form-group">
+          <label>Upstream Host</label>
+          <input type="text" id="proxyHost" placeholder="proxy.corp.local or IP">
+        </div>
+        <div class="form-group">
+          <label>Upstream Port</label>
+          <input type="number" id="proxyPort" placeholder="8080">
+        </div>
+      </div>
+
+      <!-- PAC File Location -->
+      <div id="pacSection" class="form-group" style="display:none;">
+        <label>PAC File Location or URL</label>
+        <input type="text" id="pacLocation" placeholder="http://wpad/wpad.dat or C:\proxy.pac">
+      </div>
+
+      <!-- Authentication -->
+      <div id="authSection">
+        <div class="form-group">
+          <label class="checkbox-group">
+            <input type="checkbox" id="useCurrentCreds" onchange="onUseCurrentCredsChange()">
+            <span>Use Current Windows User Credentials (SSPI / NTLM / Kerberos SSO)</span>
+          </label>
+        </div>
+
+        <div id="manualCredsSection" class="form-row">
+          <div class="form-group">
+            <label>Username (or DOMAIN\user)</label>
+            <input type="text" id="proxyUser" placeholder="username">
+          </div>
+          <div class="form-group">
+            <label>Password</label>
+            <input type="password" id="proxyPass" placeholder="password">
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Test URL</label>
+        <input type="text" id="testUrl" value="https://example.com">
+      </div>
+
+      <div class="actions">
+        <button class="btn btn-outline" onclick="loadConfig()">Reset</button>
+        <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
+      </div>
+    </div>
+
+    <!-- Live Logs -->
+    <div class="card">
+      <div class="card-title">
+        <span>Live Traffic Logs</span>
+        <button class="btn btn-outline btn-sm" onclick="clearLogs()">Clear</button>
+      </div>
+      <div class="log-container" id="logBox">
+        <div class="log-line"><span class="log-time">[System]</span> <span class="log-info">Gofoom UI ready. Local API active on :9999.</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    let isRunning = false;
+
+    function showToast(msg) {
+      const t = document.getElementById("toast");
+      t.innerText = msg;
+      t.style.display = "block";
+      setTimeout(() => { t.style.display = "none"; }, 3000);
+    }
+
+    function addLog(ts, level, msg) {
+      const box = document.getElementById("logBox");
+      const line = document.createElement("div");
+      line.className = "log-line";
+      let lvlClass = "log-info";
+      if (level === "ERROR") lvlClass = "log-err";
+      if (level === "WARN") lvlClass = "log-warn";
+      line.innerHTML = `<span class="log-time">[${ts}]</span> <span class="${lvlClass}">[${level}]</span> ${msg}`;
+      box.appendChild(line);
+      box.scrollTop = box.scrollHeight;
+    }
+
+    function clearLogs() {
+      document.getElementById("logBox").innerHTML = "";
+    }
+
+    function onProxyTypeChange() {
+      const t = document.getElementById("proxyType").value;
+      document.getElementById("hostPortSection").style.display = (t === "HTTP" || t === "SOCKS5" || t === "SOCKS4") ? "grid" : "none";
+      document.getElementById("pacSection").style.display = (t === "PAC") ? "block" : "none";
+      document.getElementById("authSection").style.display = (t === "HTTP") ? "block" : "none";
+    }
+
+    function onUseCurrentCredsChange() {
+      const checked = document.getElementById("useCurrentCreds").checked;
+      document.getElementById("manualCredsSection").style.opacity = checked ? "0.4" : "1.0";
+      document.getElementById("proxyUser").disabled = checked;
+      document.getElementById("proxyPass").disabled = checked;
+    }
+
+    async function loadConfig() {
+      try {
+        const res = await fetch("http://127.0.0.1:9999/config");
+        if (res.ok) {
+          const cfg = await res.json();
+          document.getElementById("proxyType").value = cfg.proxyType || "DIRECT";
+          document.getElementById("localPort").value = cfg.localPort || 3129;
+          document.getElementById("proxyHost").value = cfg.proxyHost || "";
+          document.getElementById("proxyPort").value = cfg.proxyPort || "";
+          document.getElementById("pacLocation").value = cfg.pacFileLocation || "";
+          document.getElementById("useCurrentCreds").checked = cfg.useCurrentCredentials ?? true;
+          document.getElementById("proxyUser").value = cfg.proxyUsername || "";
+          document.getElementById("proxyPass").value = cfg.proxyPassword || "";
+          document.getElementById("testUrl").value = cfg.proxyTestUrl || "https://example.com";
+          onProxyTypeChange();
+          onUseCurrentCredsChange();
+        }
+      } catch (e) {
+        console.error("Failed to load config:", e);
+      }
+    }
+
+    async function saveConfig() {
+      const cfg = {
+        proxyType: document.getElementById("proxyType").value,
+        localPort: parseInt(document.getElementById("localPort").value, 10),
+        proxyHost: document.getElementById("proxyHost").value,
+        proxyPort: parseInt(document.getElementById("proxyPort").value, 10) || 0,
+        pacFileLocation: document.getElementById("pacLocation").value,
+        useCurrentCredentials: document.getElementById("useCurrentCreds").checked,
+        proxyUsername: document.getElementById("proxyUser").value,
+        proxyPassword: document.getElementById("proxyPass").value,
+        proxyTestUrl: document.getElementById("testUrl").value
+      };
+
+      try {
+        const res = await fetch("http://127.0.0.1:9999/config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(cfg)
+        });
+        const txt = await res.text();
+        showToast(txt.trim());
+      } catch (e) {
+        showToast("Error saving config: " + e.message);
+      }
+    }
+
+    async function updateStatus() {
+      try {
+        const res = await fetch("http://127.0.0.1:9999/status");
+        if (res.ok) {
+          const text = await res.text();
+          const running = text.includes("up");
+          isRunning = running;
+          const badge = document.getElementById("statusBadge");
+          const btn = document.getElementById("btnToggleServer");
+          if (running) {
+            badge.className = "status-badge status-running";
+            document.getElementById("statusText").innerText = "RUNNING";
+            btn.className = "btn btn-danger";
+            btn.innerText = "Stop Server";
+          } else {
+            badge.className = "status-badge status-stopped";
+            document.getElementById("statusText").innerText = "STOPPED";
+            btn.className = "btn btn-success";
+            btn.innerText = "Start Server";
+          }
+        }
+      } catch (e) {}
+    }
+
+    async function toggleServer() {
+      const endpoint = isRunning ? "/stop" : "/start";
+      try {
+        const res = await fetch("http://127.0.0.1:9999" + endpoint, { method: "POST" });
+        const txt = await res.text();
+        showToast(txt.trim());
+        setTimeout(updateStatus, 150);
+      } catch (e) {
+        showToast("Action failed: " + e.message);
+      }
+    }
+
+    async function autoDetect() {
+      try {
+        const res = await fetch("http://127.0.0.1:9999/autodetect");
+        const txt = await res.text();
+        showToast(txt.trim());
+        await loadConfig();
+      } catch (e) {
+        showToast("Auto-detect failed: " + e.message);
+      }
+    }
+
+    async function testConnection() {
+      showToast("Testing connection...");
+      try {
+        const res = await fetch("http://127.0.0.1:9999/validate");
+        const txt = await res.text();
+        showToast(txt.trim());
+      } catch (e) {
+        showToast("Validation request failed: " + e.message);
+      }
+    }
+
+    // Connect to Wails event bus if available, or poll
+    window.addEventListener("DOMContentLoaded", () => {
+      loadConfig();
+      updateStatus();
+      setInterval(updateStatus, 3000);
+
+      // Listen to Wails v3 events if runtime exists
+      if (window.wails && window.wails.Events) {
+        window.wails.Events.On("gofoom:log", (ev) => {
+          if (ev) {
+            const time = new Date(ev.timestamp).toLocaleTimeString();
+            addLog(time, ev.level || "INFO", `${ev.method || ""} ${ev.target || ""} -> ${ev.status || ""} (${ev.message || ""})`);
+          }
+        });
+        window.wails.Events.On("gofoom:stats", (stats) => {
+          if (stats) {
+            document.getElementById("statActive").innerText = stats.activeConnections;
+            document.getElementById("statRequests").innerText = stats.totalRequests;
+            document.getElementById("statIn").innerText = (stats.bytesReceived / 1024).toFixed(1) + " KB";
+            document.getElementById("statOut").innerText = (stats.bytesSent / 1024).toFixed(1) + " KB";
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>
