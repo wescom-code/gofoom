@@ -187,6 +187,17 @@
         <input type="text" id="testUrl" value="https://example.com">
       </div>
 
+      <div class="form-group" style="margin-top: 14px; border-top: 1px dashed var(--card-border); padding-top: 12px;">
+        <label class="checkbox-group">
+          <input type="checkbox" id="autoStartProxy">
+          <span>Auto-start proxy on app launch (minimize to tray)</span>
+        </label>
+        <label class="checkbox-group" style="margin-top: 8px;">
+          <input type="checkbox" id="launchOnStartup">
+          <span>Launch Gofoom at Windows startup</span>
+        </label>
+      </div>
+
       <div class="actions">
         <button class="btn btn-outline" onclick="loadConfig()">Reset</button>
         <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
@@ -261,6 +272,8 @@
           document.getElementById("proxyUser").value = cfg.proxyUsername || "";
           document.getElementById("proxyPass").value = cfg.proxyPassword || "";
           document.getElementById("testUrl").value = cfg.proxyTestUrl || "https://example.com";
+          document.getElementById("autoStartProxy").checked = cfg.autostart ?? false;
+          document.getElementById("launchOnStartup").checked = cfg.launchOnStartup ?? false;
           onProxyTypeChange();
           onUseCurrentCredsChange();
         }
@@ -279,7 +292,9 @@
         useCurrentCredentials: document.getElementById("useCurrentCreds").checked,
         proxyUsername: document.getElementById("proxyUser").value,
         proxyPassword: document.getElementById("proxyPass").value,
-        proxyTestUrl: document.getElementById("testUrl").value
+        proxyTestUrl: document.getElementById("testUrl").value,
+        autostart: document.getElementById("autoStartProxy").checked,
+        launchOnStartup: document.getElementById("launchOnStartup").checked
       };
 
       try {

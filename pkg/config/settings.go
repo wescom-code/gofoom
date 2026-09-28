@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"gofoom/pkg/proxy"
+	"gofoom/pkg/sysproxy"
 )
 
 // AppConfig represents persisted user settings matching Winfoom JSON schema.
@@ -23,6 +24,7 @@ type AppConfig struct {
 	PacFileLocation       string `json:"pacFileLocation"`
 	AutoStart             bool   `json:"autostart"`
 	AutoDetect            bool   `json:"autodetect"`
+	LaunchOnStartup       bool   `json:"launchOnStartup"`
 }
 
 // ConfigManager handles loading and persisting settings.
@@ -48,9 +50,11 @@ func NewConfigManager(filePath string) *ConfigManager {
 	if filePath == "" {
 		filePath = "gofoom.json"
 	}
+	def := DefaultAppConfig()
+	def.LaunchOnStartup = sysproxy.IsWindowsStartupEnabled()
 	cm := &ConfigManager{
 		filePath: filePath,
-		current:  DefaultAppConfig(),
+		current:  def,
 	}
 	_ = cm.Load()
 	return cm
@@ -70,6 +74,7 @@ func (cm *ConfigManager) Load() error {
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		return err
 	}
+	cfg.LaunchOnStartup = sysproxy.IsWindowsStartupEnabled()
 	cm.current = cfg
 	return nil
 }
@@ -112,6 +117,9 @@ func (cm *ConfigManager) Update(newCfg AppConfig) error {
 	cm.mu.Lock()
 	if newCfg.ProxyPassword == "******" {
 		newCfg.ProxyPassword = cm.current.ProxyPassword
+	}
+	if newCfg.LaunchOnStartup != cm.current.LaunchOnStartup {
+		_ = sysproxy.SetWindowsStartup(newCfg.LaunchOnStartup)
 	}
 	cm.current = newCfg
 	cm.mu.Unlock()

@@ -162,10 +162,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodPost {
-		if s.proxyServer.IsRunning() {
-			_, _ = fmt.Fprintln(w, "The local proxy server is up, you need to stop it before applying configuration")
-			return
-		}
+		cur := s.configMgr.Get()
 
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -179,9 +176,19 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if s.proxyServer.IsRunning() && newCfg.LocalPort != cur.LocalPort {
+			_, _ = fmt.Fprintln(w, "The local proxy server is up, you need to stop it before changing local port")
+			return
+		}
+
 		if err := s.configMgr.Update(newCfg); err != nil {
 			http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 			return
+		}
+
+		if s.proxyServer.IsRunning() {
+			sc := s.configMgr.ToServerConfig()
+			s.proxyServer.UpdateConfig(sc)
 		}
 
 		_, _ = fmt.Fprintln(w, "Proxy configuration changed")

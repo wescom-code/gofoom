@@ -98,6 +98,8 @@ func (u *AppUI) Run(startMinimized bool) error {
 	statusItem := trayMenu.Add("Status: STOPPED")
 	statusItem.SetEnabled(false)
 
+	var autoStartItem, startupItem *application.MenuItem
+
 	toggleItem := trayMenu.Add("Start Proxy")
 	toggleItem.OnClick(func(ctx *application.Context) {
 		if u.proxyServer.IsRunning() {
@@ -107,7 +109,7 @@ func (u *AppUI) Run(startMinimized bool) error {
 			u.proxyServer.UpdateConfig(sc)
 			_ = u.proxyServer.Start()
 		}
-		u.updateTrayState(tray, statusItem, toggleItem)
+		u.updateTrayState(tray, statusItem, toggleItem, autoStartItem, startupItem)
 	})
 
 	trayMenu.Add("Auto-Detect Proxy").OnClick(func(ctx *application.Context) {
@@ -125,6 +127,27 @@ func (u *AppUI) Run(startMinimized bool) error {
 	})
 
 	trayMenu.AddSeparator()
+
+	autoStartItem = trayMenu.AddCheckbox("Auto-start Proxy on Launch", u.configMgr.Get().AutoStart)
+	autoStartItem.OnClick(func(ctx *application.Context) {
+		cur := u.configMgr.Get()
+		cur.AutoStart = !cur.AutoStart
+		_ = u.configMgr.Update(cur)
+		autoStartItem.SetChecked(cur.AutoStart)
+	})
+
+	startupItem = trayMenu.AddCheckbox("Launch at Windows Startup", sysproxy.IsWindowsStartupEnabled())
+	startupItem.OnClick(func(ctx *application.Context) {
+		cur := sysproxy.IsWindowsStartupEnabled()
+		next := !cur
+		_ = sysproxy.SetWindowsStartup(next)
+		startupItem.SetChecked(next)
+		cfg := u.configMgr.Get()
+		cfg.LaunchOnStartup = next
+		_ = u.configMgr.Update(cfg)
+	})
+
+	trayMenu.AddSeparator()
 	trayMenu.Add("Quit Gofoom").OnClick(func(ctx *application.Context) {
 		_ = u.proxyServer.Stop()
 		if u.apiServer != nil {
@@ -134,7 +157,7 @@ func (u *AppUI) Run(startMinimized bool) error {
 	})
 
 	tray.SetMenu(trayMenu)
-	u.updateTrayState(tray, statusItem, toggleItem)
+	u.updateTrayState(tray, statusItem, toggleItem, autoStartItem, startupItem)
 
 	// Left click on tray toggles the window
 	tray.OnClick(func() {
@@ -163,14 +186,14 @@ func (u *AppUI) Run(startMinimized bool) error {
 		for range ticker.C {
 			stats := u.proxyServer.GetStats()
 			app.Event.Emit("gofoom:stats", stats)
-			u.updateTrayState(tray, statusItem, toggleItem)
+			u.updateTrayState(tray, statusItem, toggleItem, autoStartItem, startupItem)
 		}
 	}()
 
 	return app.Run()
 }
 
-func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggleItem *application.MenuItem) {
+func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggleItem, autoStartItem, startupItem *application.MenuItem) {
 	running := u.proxyServer.IsRunning()
 	status := "STOPPED"
 	toggleLabel := "Start Proxy"
@@ -181,5 +204,11 @@ func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggle
 	cfg := u.configMgr.Get()
 	statusItem.SetLabel(fmt.Sprintf("Status: %s", status))
 	toggleItem.SetLabel(toggleLabel)
+	if autoStartItem != nil {
+		autoStartItem.SetChecked(cfg.AutoStart)
+	}
+	if startupItem != nil {
+		startupItem.SetChecked(sysproxy.IsWindowsStartupEnabled())
+	}
 	tray.SetTooltip(fmt.Sprintf("Gofoom: %s (:%d -> %s)", status, cfg.LocalPort, cfg.ProxyType))
 }
