@@ -49,6 +49,15 @@ func (u *AppUI) Run(startMinimized bool) error {
 		Name:        "Gofoom",
 		Description: "High-Performance Proxy Facade",
 		Icon:        u.iconBytes,
+		SingleInstance: &application.SingleInstanceOptions{
+			UniqueID: "com.gofoom.proxy.facade",
+			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
+				if u.window != nil {
+					u.window.Show()
+					u.window.Focus()
+				}
+			},
+		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(u.assets),
 		},
@@ -76,7 +85,6 @@ func (u *AppUI) Run(startMinimized bool) error {
 	if len(u.iconBytes) > 0 {
 		tray.SetIcon(u.iconBytes)
 	}
-	tray.SetTooltip("Gofoom - Proxy Facade")
 
 	trayMenu := app.Menu.New()
 	trayMenu.Add("Show Dashboard").OnClick(func(ctx *application.Context) {
@@ -86,18 +94,20 @@ func (u *AppUI) Run(startMinimized bool) error {
 
 	trayMenu.AddSeparator()
 
-	startItem := trayMenu.Add("Start Proxy")
-	startItem.OnClick(func(ctx *application.Context) {
-		sc := u.configMgr.ToServerConfig()
-		u.proxyServer.UpdateConfig(sc)
-		_ = u.proxyServer.Start()
-		u.updateTrayState(tray, true)
-	})
+	// Dynamic status indicator and single toggle action
+	statusItem := trayMenu.Add("Status: STOPPED")
+	statusItem.SetEnabled(false)
 
-	stopItem := trayMenu.Add("Stop Proxy")
-	stopItem.OnClick(func(ctx *application.Context) {
-		_ = u.proxyServer.Stop()
-		u.updateTrayState(tray, false)
+	toggleItem := trayMenu.Add("Start Proxy")
+	toggleItem.OnClick(func(ctx *application.Context) {
+		if u.proxyServer.IsRunning() {
+			_ = u.proxyServer.Stop()
+		} else {
+			sc := u.configMgr.ToServerConfig()
+			u.proxyServer.UpdateConfig(sc)
+			_ = u.proxyServer.Start()
+		}
+		u.updateTrayState(tray, statusItem, toggleItem)
 	})
 
 	trayMenu.Add("Auto-Detect Proxy").OnClick(func(ctx *application.Context) {
@@ -124,6 +134,7 @@ func (u *AppUI) Run(startMinimized bool) error {
 	})
 
 	tray.SetMenu(trayMenu)
+	u.updateTrayState(tray, statusItem, toggleItem)
 
 	// Left click on tray toggles the window
 	tray.OnClick(func() {
@@ -145,24 +156,30 @@ func (u *AppUI) Run(startMinimized bool) error {
 		}
 	}()
 
-	// Periodic stats emitter
+	// Periodic stats and tray status emitter
 	go func() {
 		ticker := time.NewTicker(1 * time.Second)
 		defer ticker.Stop()
 		for range ticker.C {
 			stats := u.proxyServer.GetStats()
 			app.Event.Emit("gofoom:stats", stats)
+			u.updateTrayState(tray, statusItem, toggleItem)
 		}
 	}()
 
 	return app.Run()
 }
 
-func (u *AppUI) updateTrayState(tray *application.SystemTray, running bool) {
+func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggleItem *application.MenuItem) {
+	running := u.proxyServer.IsRunning()
 	status := "STOPPED"
+	toggleLabel := "Start Proxy"
 	if running {
 		status = "RUNNING"
+		toggleLabel = "Stop Proxy"
 	}
 	cfg := u.configMgr.Get()
+	statusItem.SetLabel(fmt.Sprintf("Status: %s", status))
+	toggleItem.SetLabel(toggleLabel)
 	tray.SetTooltip(fmt.Sprintf("Gofoom: %s (:%d -> %s)", status, cfg.LocalPort, cfg.ProxyType))
 }

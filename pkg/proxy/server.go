@@ -18,6 +18,7 @@ type ProxyServer struct {
 	httpServer   *http.Server
 	transport    *http.Transport
 	isRunning    bool
+	recentLogs   []LogEvent
 	logListeners []chan LogEvent
 	logMu        sync.RWMutex
 }
@@ -182,13 +183,29 @@ func (s *ProxyServer) SubscribeLogs(bufSize int) (<-chan LogEvent, func()) {
 }
 
 func (s *ProxyServer) log(event LogEvent) {
-	s.logMu.RLock()
-	defer s.logMu.RUnlock()
-	for _, ch := range s.logListeners {
+	s.logMu.Lock()
+	if len(s.recentLogs) >= 200 {
+		s.recentLogs = s.recentLogs[1:]
+	}
+	s.recentLogs = append(s.recentLogs, event)
+	listeners := make([]chan LogEvent, len(s.logListeners))
+	copy(listeners, s.logListeners)
+	s.logMu.Unlock()
+
+	for _, ch := range listeners {
 		select {
 		case ch <- event:
 		default:
 			// Non-blocking drop if subscriber is too slow
 		}
 	}
+}
+
+// GetRecentLogs returns a snapshot of recent log events.
+func (s *ProxyServer) GetRecentLogs() []LogEvent {
+	s.logMu.RLock()
+	defer s.logMu.RUnlock()
+	cp := make([]LogEvent, len(s.recentLogs))
+	copy(cp, s.recentLogs)
+	return cp
 }

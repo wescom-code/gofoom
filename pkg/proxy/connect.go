@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -30,6 +31,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.stats.IncConnects()
+	s.stats.IncRequests()
 	s.stats.IncActive()
 	defer s.stats.DecActive()
 
@@ -95,6 +97,25 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	s.pipeDuplex(clientConn, upstreamConn, r.RemoteAddr, target, start)
 }
 
+type countingWriter struct {
+	writer  io.Writer
+	counter *uint64
+	onAdd   func(n uint64)
+}
+
+func (cw *countingWriter) Write(p []byte) (int, error) {
+	n, err := cw.writer.Write(p)
+	if n > 0 {
+		if cw.counter != nil {
+			atomic.AddUint64(cw.counter, uint64(n))
+		}
+		if cw.onAdd != nil {
+			cw.onAdd(uint64(n))
+		}
+	}
+	return n, err
+}
+
 // pipeDuplex handles bidirectional byte copying between client and upstream connections.
 func (s *ProxyServer) pipeDuplex(clientConn, upstreamConn net.Conn, clientAddr, target string, start time.Time) {
 	var wg sync.WaitGroup
@@ -102,27 +123,33 @@ func (s *ProxyServer) pipeDuplex(clientConn, upstreamConn net.Conn, clientAddr, 
 
 	var bytesIn, bytesOut uint64
 
-	// Client -> Upstream
+	// Client -> Upstream (Bytes sent / Out)
 	go func() {
 		defer wg.Done()
 		bufPtr := bufferPool.Get().(*[]byte)
 		defer bufferPool.Put(bufPtr)
 
-		n, _ := io.CopyBuffer(upstreamConn, clientConn, *bufPtr)
-		bytesOut = uint64(n)
-		s.stats.AddBytesOut(bytesOut)
+		cw := &countingWriter{
+			writer:  upstreamConn,
+			counter: &bytesOut,
+			onAdd:   s.stats.AddBytesOut,
+		}
+		_, _ = io.CopyBuffer(cw, clientConn, *bufPtr)
 		_ = upstreamConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	}()
 
-	// Upstream -> Client
+	// Upstream -> Client (Bytes received / In)
 	go func() {
 		defer wg.Done()
 		bufPtr := bufferPool.Get().(*[]byte)
 		defer bufferPool.Put(bufPtr)
 
-		n, _ := io.CopyBuffer(clientConn, upstreamConn, *bufPtr)
-		bytesIn = uint64(n)
-		s.stats.AddBytesIn(bytesIn)
+		cw := &countingWriter{
+			writer:  clientConn,
+			counter: &bytesIn,
+			onAdd:   s.stats.AddBytesIn,
+		}
+		_, _ = io.CopyBuffer(cw, upstreamConn, *bufPtr)
 		_ = clientConn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	}()
 

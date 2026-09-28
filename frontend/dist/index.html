@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Gofoom - Proxy Facade</title>
+  <script src="/wails/runtime.js"></script>
   <style>
     :root {
       --bg: #0f172a;
@@ -342,36 +343,98 @@
     }
 
     async function testConnection() {
-      showToast("Testing connection...");
+      const rawUrl = document.getElementById("testUrl").value.trim();
+      if (!rawUrl) {
+        showToast("Please enter a test URL");
+        return;
+      }
+      showToast("Testing connection to " + rawUrl + "...");
       try {
-        const res = await fetch("http://127.0.0.1:9999/validate");
+        const res = await fetch("http://127.0.0.1:9999/validate?url=" + encodeURIComponent(rawUrl));
         const txt = await res.text();
         showToast(txt.trim());
+        addLog(new Date().toLocaleTimeString(), res.ok ? "INFO" : "WARN", "[Validation] " + txt.trim());
       } catch (e) {
         showToast("Validation request failed: " + e.message);
       }
+    }
+
+    function formatBytes(bytes) {
+      if (!bytes || bytes <= 0) return "0 B";
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+      return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+    }
+
+    function renderStats(stats) {
+      if (!stats) return;
+      document.getElementById("statActive").innerText = stats.activeConnections || 0;
+      document.getElementById("statRequests").innerText = stats.totalRequests || 0;
+      document.getElementById("statIn").innerText = formatBytes(stats.bytesReceived);
+      document.getElementById("statOut").innerText = formatBytes(stats.bytesSent);
+    }
+
+    async function updateStats() {
+      try {
+        const res = await fetch("http://127.0.0.1:9999/stats");
+        if (res.ok) {
+          const stats = await res.json();
+          renderStats(stats);
+        }
+      } catch (e) {}
+    }
+
+    let seenLogs = 0;
+    async function updateLogs() {
+      try {
+        const res = await fetch("http://127.0.0.1:9999/logs");
+        if (res.ok) {
+          const logs = await res.json();
+          if (Array.isArray(logs) && logs.length > seenLogs) {
+            for (let i = seenLogs; i < logs.length; i++) {
+              const ev = logs[i];
+              const time = new Date(ev.timestamp).toLocaleTimeString();
+              let target = ev.target || "";
+              let method = ev.method || "";
+              let status = ev.status || "";
+              let msg = ev.message || "";
+              let logText = method ? `${method} ${target} -> ${status} (${msg})` : msg;
+              addLog(time, ev.level || "INFO", logText);
+            }
+            seenLogs = logs.length;
+          }
+        }
+      } catch (e) {}
     }
 
     // Connect to Wails event bus if available, or poll
     window.addEventListener("DOMContentLoaded", () => {
       loadConfig();
       updateStatus();
+      updateStats();
+      updateLogs();
+
       setInterval(updateStatus, 3000);
+      setInterval(updateStats, 1000);
+      setInterval(updateLogs, 1500);
 
       // Listen to Wails v3 events if runtime exists
       if (window.wails && window.wails.Events) {
         window.wails.Events.On("gofoom:log", (ev) => {
           if (ev) {
             const time = new Date(ev.timestamp).toLocaleTimeString();
-            addLog(time, ev.level || "INFO", `${ev.method || ""} ${ev.target || ""} -> ${ev.status || ""} (${ev.message || ""})`);
+            let target = ev.target || "";
+            let method = ev.method || "";
+            let status = ev.status || "";
+            let msg = ev.message || "";
+            let logText = method ? `${method} ${target} -> ${status} (${msg})` : msg;
+            addLog(time, ev.level || "INFO", logText);
           }
         });
         window.wails.Events.On("gofoom:stats", (stats) => {
           if (stats) {
-            document.getElementById("statActive").innerText = stats.activeConnections;
-            document.getElementById("statRequests").innerText = stats.totalRequests;
-            document.getElementById("statIn").innerText = (stats.bytesReceived / 1024).toFixed(1) + " KB";
-            document.getElementById("statOut").innerText = (stats.bytesSent / 1024).toFixed(1) + " KB";
+            renderStats(stats);
           }
         });
       }

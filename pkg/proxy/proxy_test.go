@@ -135,4 +135,13 @@ func TestDirectConnectTunnel(t *testing.T) {
 	if stats.TotalConnects == 0 {
 		t.Errorf("Expected stats.TotalConnects > 0, got %d", stats.TotalConnects)
 	}
+	if stats.TotalRequests == 0 {
+		t.Errorf("Expected stats.TotalRequests > 0, got %d", stats.TotalRequests)
+	}
+	if stats.BytesReceived == 0 {
+		t.Errorf("Expected stats.BytesReceived > 0, got %d", stats.BytesReceived)
+	}
+	if stats.BytesSent == 0 {
+		t.Errorf("Expected stats.BytesSent > 0, got %d", stats.BytesSent)
+	}
 }

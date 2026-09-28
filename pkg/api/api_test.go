@@ -16,8 +16,10 @@ import (
 func TestApiServerEndpoints(t *testing.T) {
 	// Setup proxy server & config manager
 	cfgMgr := config.NewConfigManager("test_gofoom.json")
+	appCfg := cfgMgr.Get()
+	appCfg.LocalPort = 13135
+	_ = cfgMgr.Update(appCfg)
 	initialCfg := cfgMgr.ToServerConfig()
-	initialCfg.LocalPort = 13135
 	proxySrv := proxy.NewServer(initialCfg)
 
 	shutdownCalled := false
@@ -83,20 +85,21 @@ func TestApiServerEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to GET /config: %v", err)
 	}
-	var appCfg config.AppConfig
-	if err := json.NewDecoder(resp.Body).Decode(&appCfg); err != nil {
+	var readCfg config.AppConfig
+	if err := json.NewDecoder(resp.Body).Decode(&readCfg); err != nil {
 		t.Fatalf("Failed to decode JSON config: %v", err)
 	}
 	resp.Body.Close()
-	if appCfg.LocalPort != 3129 {
-		t.Errorf("Expected default LocalPort 3129, got %d", appCfg.LocalPort)
+	if readCfg.LocalPort != 13135 {
+		t.Errorf("Expected LocalPort 13135, got %d", readCfg.LocalPort)
 	}
 
 	// 6. POST /config
-	appCfg.ProxyType = "HTTP"
-	appCfg.ProxyHost = "192.168.1.100"
-	appCfg.ProxyPort = 8080
-	cfgData, _ := json.Marshal(appCfg)
+	updateCfg := readCfg
+	updateCfg.ProxyType = "HTTP"
+	updateCfg.ProxyHost = "192.168.1.100"
+	updateCfg.ProxyPort = 8080
+	cfgData, _ := json.Marshal(updateCfg)
 
 	resp, err = http.Post(apiURL+"/config", "application/json", bytes.NewReader(cfgData))
 	if err != nil {
@@ -108,7 +111,66 @@ func TestApiServerEndpoints(t *testing.T) {
 		t.Errorf("Expected changed message, got %s", string(body))
 	}
 
-	// 7. Test /shutdown
+	// 7. Test CORS Preflight OPTIONS
+	req, _ := http.NewRequest(http.MethodOptions, apiURL+"/config", nil)
+	req.Header.Set("Origin", "http://wails.localhost")
+	req.Header.Set("Access-Control-Request-Method", "POST")
+	req.Header.Set("Access-Control-Request-Private-Network", "true")
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("Failed to execute OPTIONS preflight: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("Expected 200 for OPTIONS preflight, got %d", resp.StatusCode)
+	}
+	if resp.Header.Get("Access-Control-Allow-Origin") != "*" {
+		t.Errorf("Expected Access-Control-Allow-Origin: *")
+	}
+	if resp.Header.Get("Access-Control-Allow-Private-Network") != "true" {
+		t.Errorf("Expected Access-Control-Allow-Private-Network: true")
+	}
+
+	// 8. Test /validate while proxy is down
+	resp, err = http.Get(apiURL + "/validate")
+	if err != nil {
+		t.Fatalf("Failed to GET /validate: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "down") {
+		t.Errorf("Expected down message for /validate, got %s", string(body))
+	}
+
+	// 9. Test /stats
+	resp, err = http.Get(apiURL + "/stats")
+	if err != nil {
+		t.Fatalf("Failed to GET /stats: %v", err)
+	}
+	var statMap map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&statMap); err != nil {
+		t.Fatalf("Failed to decode /stats JSON: %v", err)
+	}
+	resp.Body.Close()
+	if _, ok := statMap["activeConnections"]; !ok {
+		t.Errorf("Expected activeConnections in /stats")
+	}
+	if _, ok := statMap["totalRequests"]; !ok {
+		t.Errorf("Expected totalRequests in /stats")
+	}
+
+	// 10. Test /logs
+	resp, err = http.Get(apiURL + "/logs")
+	if err != nil {
+		t.Fatalf("Failed to GET /logs: %v", err)
+	}
+	var logsList []map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&logsList); err != nil {
+		t.Fatalf("Failed to decode /logs JSON: %v", err)
+	}
+	resp.Body.Close()
+
+	// 11. Test /shutdown
 	resp, err = http.Post(apiURL+"/shutdown", "text/plain", nil)
 	if err != nil {
 		t.Fatalf("Failed to POST /shutdown: %v", err)

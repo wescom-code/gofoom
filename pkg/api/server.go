@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -58,6 +59,8 @@ func (s *Server) Start() error {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", s.handleStatus)
+	mux.HandleFunc("/stats", s.handleStats)
+	mux.HandleFunc("/logs", s.handleLogs)
 	mux.HandleFunc("/start", s.handleStart)
 	mux.HandleFunc("/stop", s.handleStop)
 	mux.HandleFunc("/config", s.handleConfig)
@@ -67,7 +70,7 @@ func (s *Server) Start() error {
 
 	s.listener = listener
 	s.httpServer = &http.Server{
-		Handler:      mux,
+		Handler:      corsMiddleware(mux),
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
 	}
@@ -78,6 +81,21 @@ func (s *Server) Start() error {
 	}()
 
 	return nil
+}
+
+// corsMiddleware adds CORS and Private Network Access headers to support WebView2 & browser requests.
+func corsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, *")
+		w.Header().Set("Access-Control-Allow-Private-Network", "true")
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // Stop terminates the API server.
@@ -194,14 +212,30 @@ func (s *Server) handleAutodetect(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	if !s.proxyServer.IsRunning() {
+		w.WriteHeader(http.StatusServiceUnavailable)
 		_, _ = fmt.Fprintln(w, "The local proxy server is down, you need to start it before validating configuration")
 		return
 	}
 
 	cfg := s.configMgr.Get()
-	testURL := cfg.ProxyTestURL
+	testURL := r.URL.Query().Get("url")
+	if testURL == "" {
+		testURL = cfg.ProxyTestURL
+	}
 	if testURL == "" {
 		testURL = "https://example.com"
+	}
+
+	// Ensure scheme
+	if !strings.HasPrefix(testURL, "http://") && !strings.HasPrefix(testURL, "https://") {
+		testURL = "http://" + testURL
+	}
+
+	parsedURL, err := url.Parse(testURL)
+	if err != nil || parsedURL.Host == "" {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprintf(w, "Invalid test URL format: %q\n", testURL)
+		return
 	}
 
 	proxyAddr := fmt.Sprintf("http://127.0.0.1:%d", cfg.LocalPort)
@@ -209,17 +243,33 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 		Transport: &http.Transport{
 			Proxy: http.ProxyURL(&url.URL{Scheme: "http", Host: fmt.Sprintf("127.0.0.1:%d", cfg.LocalPort)}),
 		},
-		Timeout: 5 * time.Second,
+		Timeout: 6 * time.Second,
 	}
 
 	resp, err := client.Get(testURL)
 	if err != nil {
-		_, _ = fmt.Fprintf(w, "Error on validating configuration via %s: %v\n", proxyAddr, err)
+		w.WriteHeader(http.StatusBadGateway)
+		_, _ = fmt.Fprintf(w, "Validation failed via %s: %v\n", proxyAddr, err)
 		return
 	}
 	defer resp.Body.Close()
 
-	_, _ = fmt.Fprintln(w, "The configuration is valid")
+	if resp.StatusCode >= 400 {
+		w.WriteHeader(http.StatusBadGateway)
+		switch resp.StatusCode {
+		case http.StatusBadGateway:
+			_, _ = fmt.Fprintln(w, "Validation failed: Wrong proxy host/port (502 Bad Gateway)")
+		case http.StatusProxyAuthRequired:
+			_, _ = fmt.Fprintln(w, "Validation failed: Wrong username/password (407 Proxy Authentication Required)")
+		case http.StatusGatewayTimeout, http.StatusNotFound:
+			_, _ = fmt.Fprintf(w, "Validation failed: Cannot connect to target URL (HTTP %d)\n", resp.StatusCode)
+		default:
+			_, _ = fmt.Fprintf(w, "Validation failed with status code: %d %s\n", resp.StatusCode, resp.Status)
+		}
+		return
+	}
+
+	_, _ = fmt.Fprintf(w, "The configuration is valid (Connected to %s, Status: %d)\n", parsedURL.Host, resp.StatusCode)
 }
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
@@ -230,4 +280,38 @@ func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 			s.shutdownFunc()
 		}()
 	}
+}
+
+func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
+	st := s.proxyServer.GetStats()
+	active := st.ActiveConnections
+	if active < 0 {
+		active = 0
+	}
+	resp := struct {
+		ActiveConnections int64  `json:"activeConnections"`
+		TotalRequests     uint64 `json:"totalRequests"`
+		TotalConnects     uint64 `json:"totalConnects"`
+		BytesReceived     uint64 `json:"bytesReceived"`
+		BytesSent         uint64 `json:"bytesSent"`
+		ErrorsCount       uint64 `json:"errorsCount"`
+		IsRunning         bool   `json:"isRunning"`
+	}{
+		ActiveConnections: active,
+		TotalRequests:     st.TotalRequests,
+		TotalConnects:     st.TotalConnects,
+		BytesReceived:     st.BytesReceived,
+		BytesSent:         st.BytesSent,
+		ErrorsCount:       st.ErrorsCount,
+		IsRunning:         s.proxyServer.IsRunning(),
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
+	logs := s.proxyServer.GetRecentLogs()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(logs)
 }
