@@ -42,6 +42,13 @@ func NewServer(port int, ps *proxy.ProxyServer, cm *config.ConfigManager, onShut
 	}
 }
 
+// Port returns the active bound API port.
+func (s *Server) Port() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.port
+}
+
 // Start launches the API HTTP listener.
 func (s *Server) Start() error {
 	s.mu.Lock()
@@ -51,11 +58,25 @@ func (s *Server) Start() error {
 		return nil
 	}
 
-	addr := fmt.Sprintf("127.0.0.1:%d", s.port)
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("api: failed to listen on %s: %w", addr, err)
+	var listener net.Listener
+	var err error
+	actualPort := s.port
+
+	// Try requested port; if occupied, search for next available port (up to +20)
+	for i := 0; i < 20; i++ {
+		addr := fmt.Sprintf("127.0.0.1:%d", actualPort)
+		listener, err = net.Listen("tcp", addr)
+		if err == nil {
+			break
+		}
+		actualPort++
 	}
+
+	if err != nil {
+		return fmt.Errorf("api: failed to listen on 127.0.0.1:%d-%d: %w", s.port, actualPort-1, err)
+	}
+
+	s.port = actualPort
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/status", s.handleStatus)

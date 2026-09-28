@@ -2,8 +2,12 @@ package ui
 
 import (
 	_ "embed"
+	"crypto/sha256"
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"gofoom/pkg/api"
@@ -45,12 +49,17 @@ func NewAppUI(
 
 // Run starts the Wails v3 event loop.
 func (u *AppUI) Run(startMinimized bool) error {
+	exePath, _ := os.Executable()
+	dirClean := strings.ToLower(filepath.Clean(filepath.Dir(exePath)))
+	h := sha256.Sum256([]byte(dirClean))
+	uniqueID := fmt.Sprintf("com.gofoom.proxy.%x", h[:4])
+
 	app := application.New(application.Options{
 		Name:        "Gofoom",
 		Description: "High-Performance Proxy Facade",
 		Icon:        u.iconBytes,
 		SingleInstance: &application.SingleInstanceOptions{
-			UniqueID: "com.gofoom.proxy.facade",
+			UniqueID: uniqueID,
 			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
 				if u.window != nil {
 					u.window.Show()
@@ -64,13 +73,20 @@ func (u *AppUI) Run(startMinimized bool) error {
 	})
 	u.app = app
 
+	apiPort := 9999
+	if u.apiServer != nil {
+		apiPort = u.apiServer.Port()
+	}
+
 	// Create Webview Window
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:         "Gofoom",
+		Title:         fmt.Sprintf("Gofoom (:%d)", u.configMgr.Get().LocalPort),
 		Width:         620,
 		Height:        780,
 		Hidden:        startMinimized,
 		DisableResize: false,
+		URL:           fmt.Sprintf("/?apiPort=%d", apiPort),
+		JS:            fmt.Sprintf("window.GOFOOM_API_PORT = %d;", apiPort),
 	})
 	u.window = win
 
@@ -210,5 +226,13 @@ func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggle
 	if startupItem != nil {
 		startupItem.SetChecked(sysproxy.IsWindowsStartupEnabled())
 	}
-	tray.SetTooltip(fmt.Sprintf("Gofoom: %s (:%d -> %s)", status, cfg.LocalPort, cfg.ProxyType))
+	exePath, _ := os.Executable()
+	dirName := filepath.Base(filepath.Dir(exePath))
+	if dirName == "" || dirName == "." || dirName == "bin" {
+		parent := filepath.Base(filepath.Dir(filepath.Dir(exePath)))
+		if parent != "" && parent != "." {
+			dirName = parent
+		}
+	}
+	tray.SetTooltip(fmt.Sprintf("Gofoom [%s]: %s (:%d -> %s)", dirName, status, cfg.LocalPort, cfg.ProxyType))
 }

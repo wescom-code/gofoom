@@ -51,12 +51,16 @@ func main() {
 		close(shutdownSignal)
 	}
 
-	// Start local API server (:9999, compatible with foomcli)
-	apiSrv := api.NewServer(*apiPort, proxySrv, cfgMgr, onShutdown)
+	// Start local API server (compatible with foomcli)
+	effectiveApiPort := *apiPort
+	if appCfg.ApiPort > 0 && *apiPort == 9999 {
+		effectiveApiPort = appCfg.ApiPort
+	}
+	apiSrv := api.NewServer(effectiveApiPort, proxySrv, cfgMgr, onShutdown)
 	if err := apiSrv.Start(); err != nil {
-		log.Printf("Warning: Failed to start API server on port %d: %v", *apiPort, err)
+		log.Printf("Warning: Failed to start API server: %v", err)
 	} else {
-		log.Printf("Gofoom API server active on http://127.0.0.1:%d", *apiPort)
+		log.Printf("Gofoom API server active on http://127.0.0.1:%d", apiSrv.Port())
 	}
 
 	// Auto-start proxy if configured

@@ -25,6 +25,7 @@ type AppConfig struct {
 	AutoStart             bool   `json:"autostart"`
 	AutoDetect            bool   `json:"autodetect"`
 	LaunchOnStartup       bool   `json:"launchOnStartup"`
+	ApiPort               int    `json:"apiPort,omitempty"`
 }
 
 // ConfigManager handles loading and persisting settings.
@@ -39,6 +40,7 @@ func DefaultAppConfig() AppConfig {
 	return AppConfig{
 		ProxyType:             "DIRECT",
 		LocalPort:             3129,
+		ApiPort:               9999,
 		ProxyTestURL:          "https://example.com",
 		UseCurrentCredentials: true,
 		HttpAuthProtocol:      "NTLM",

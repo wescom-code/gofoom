@@ -86,7 +86,7 @@
   <header>
     <div class="brand">
       <h1>Gofoom</h1>
-      <span>v1.0.0 (Go + Wails v3)</span>
+      <span id="brandSubtitle">v1.0.0</span>
     </div>
     <div style="display: flex; gap: 10px; align-items: center;">
       <div id="statusBadge" class="status-badge status-stopped">
@@ -211,7 +211,7 @@
         <button class="btn btn-outline btn-sm" onclick="clearLogs()">Clear</button>
       </div>
       <div class="log-container" id="logBox">
-        <div class="log-line"><span class="log-time">[System]</span> <span class="log-info">Gofoom UI ready. Local API active on :9999.</span></div>
+        <div class="log-line"><span class="log-time">[System]</span> <span class="log-info" id="sysInitMsg">Gofoom UI ready.</span></div>
       </div>
     </div>
   </div>
@@ -219,6 +219,9 @@
   <div id="toast" class="toast"></div>
 
   <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const apiPort = window.GOFOOM_API_PORT || parseInt(urlParams.get("apiPort"), 10) || 9999;
+    const API_BASE = "http://127.0.0.1:" + apiPort;
     let isRunning = false;
 
     function showToast(msg) {
@@ -260,7 +263,7 @@
 
     async function loadConfig() {
       try {
-        const res = await fetch("http://127.0.0.1:9999/config");
+        const res = await fetch(API_BASE + "/config");
         if (res.ok) {
           const cfg = await res.json();
           document.getElementById("proxyType").value = cfg.proxyType || "DIRECT";
@@ -298,7 +301,7 @@
       };
 
       try {
-        const res = await fetch("http://127.0.0.1:9999/config", {
+        const res = await fetch(API_BASE + "/config", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(cfg)
@@ -312,7 +315,7 @@
 
     async function updateStatus() {
       try {
-        const res = await fetch("http://127.0.0.1:9999/status");
+        const res = await fetch(API_BASE + "/status");
         if (res.ok) {
           const text = await res.text();
           const running = text.includes("up");
@@ -337,7 +340,7 @@
     async function toggleServer() {
       const endpoint = isRunning ? "/stop" : "/start";
       try {
-        const res = await fetch("http://127.0.0.1:9999" + endpoint, { method: "POST" });
+        const res = await fetch(API_BASE + endpoint, { method: "POST" });
         const txt = await res.text();
         showToast(txt.trim());
         setTimeout(updateStatus, 150);
@@ -348,7 +351,7 @@
 
     async function autoDetect() {
       try {
-        const res = await fetch("http://127.0.0.1:9999/autodetect");
+        const res = await fetch(API_BASE + "/autodetect");
         const txt = await res.text();
         showToast(txt.trim());
         await loadConfig();
@@ -365,7 +368,7 @@
       }
       showToast("Testing connection to " + rawUrl + "...");
       try {
-        const res = await fetch("http://127.0.0.1:9999/validate?url=" + encodeURIComponent(rawUrl));
+        const res = await fetch(API_BASE + "/validate?url=" + encodeURIComponent(rawUrl));
         const txt = await res.text();
         showToast(txt.trim());
         addLog(new Date().toLocaleTimeString(), res.ok ? "INFO" : "WARN", "[Validation] " + txt.trim());
@@ -392,7 +395,7 @@
 
     async function updateStats() {
       try {
-        const res = await fetch("http://127.0.0.1:9999/stats");
+        const res = await fetch(API_BASE + "/stats");
         if (res.ok) {
           const stats = await res.json();
           renderStats(stats);
@@ -403,7 +406,7 @@
     let seenLogs = 0;
     async function updateLogs() {
       try {
-        const res = await fetch("http://127.0.0.1:9999/logs");
+        const res = await fetch(API_BASE + "/logs");
         if (res.ok) {
           const logs = await res.json();
           if (Array.isArray(logs) && logs.length > seenLogs) {
@@ -425,6 +428,10 @@
 
     // Connect to Wails event bus if available, or poll
     window.addEventListener("DOMContentLoaded", () => {
+      document.getElementById("brandSubtitle").textContent = "v1.0.0 (API :" + apiPort + ")";
+      const initMsg = document.getElementById("sysInitMsg");
+      if (initMsg) initMsg.textContent = "Gofoom UI ready. Local API active on :" + apiPort + ".";
+
       loadConfig();
       updateStatus();
       updateStats();
