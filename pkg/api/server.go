@@ -15,18 +15,20 @@ import (
 	"gofoom/pkg/config"
 	"gofoom/pkg/proxy"
 	"gofoom/pkg/sysproxy"
+	"gofoom/pkg/version"
 )
 
 // Server provides the local REST API server compatible with Winfoom's foomcli.
 type Server struct {
-	mu           sync.Mutex
-	port         int
-	listener     net.Listener
-	httpServer   *http.Server
-	proxyServer  *proxy.ProxyServer
-	configMgr    *config.ConfigManager
-	shutdownFunc func()
-	isRunning    bool
+	mu             sync.Mutex
+	configuredPort int
+	port           int
+	listener       net.Listener
+	httpServer     *http.Server
+	proxyServer    *proxy.ProxyServer
+	configMgr      *config.ConfigManager
+	shutdownFunc   func()
+	isRunning      bool
 }
 
 // NewServer creates a new API server.
@@ -35,10 +37,11 @@ func NewServer(port int, ps *proxy.ProxyServer, cm *config.ConfigManager, onShut
 		port = 9999
 	}
 	return &Server{
-		port:         port,
-		proxyServer:  ps,
-		configMgr:    cm,
-		shutdownFunc: onShutdown,
+		configuredPort: port,
+		port:           port,
+		proxyServer:    ps,
+		configMgr:      cm,
+		shutdownFunc:   onShutdown,
 	}
 }
 
@@ -60,28 +63,48 @@ func (s *Server) Start() error {
 
 	var listener net.Listener
 	var err error
-	actualPort := s.port
 
 	bindHost := "127.0.0.1"
 	if s.configMgr != nil && s.configMgr.Get().AllowLan {
 		bindHost = "0.0.0.0"
 	}
 
-	// Try requested port; if occupied, search for next available port (up to +20)
-	for i := 0; i < 20; i++ {
-		addr := fmt.Sprintf("%s:%d", bindHost, actualPort)
+	targetPort := s.configuredPort
+	if targetPort <= 0 {
+		targetPort = s.port
+	}
+	if targetPort <= 0 {
+		targetPort = 9999
+	}
+
+	// First try targetPort up to 5 times (500ms) to allow OS socket release after Stop/Rebind
+	for attempt := 0; attempt < 5; attempt++ {
+		addr := fmt.Sprintf("%s:%d", bindHost, targetPort)
 		listener, err = net.Listen("tcp", addr)
 		if err == nil {
+			s.port = targetPort
 			break
 		}
-		actualPort++
+		time.Sleep(100 * time.Millisecond)
 	}
 
-	if err != nil {
-		return fmt.Errorf("api: failed to listen on %s:%d-%d: %w", bindHost, s.port, actualPort-1, err)
+	// If target port is genuinely occupied by another app, hunt next port
+	if listener == nil {
+		actualPort := targetPort + 1
+		for i := 0; i < 20; i++ {
+			addr := fmt.Sprintf("%s:%d", bindHost, actualPort)
+			listener, err = net.Listen("tcp", addr)
+			if err == nil {
+				s.port = actualPort
+				break
+			}
+			actualPort++
+		}
 	}
 
-	s.port = actualPort
+	if listener == nil {
+		return fmt.Errorf("api: failed to listen on %s:%d: %w", bindHost, targetPort, err)
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleRoot)
@@ -91,6 +114,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/start", s.handleStart)
 	mux.HandleFunc("/stop", s.handleStop)
 	mux.HandleFunc("/config", s.handleConfig)
+	mux.HandleFunc("/version", s.handleVersion)
 	mux.HandleFunc("/autodetect", s.handleAutodetect)
 	mux.HandleFunc("/validate", s.handleValidate)
 	mux.HandleFunc("/blacklist/clear", s.handleClearBlacklist)
@@ -136,6 +160,9 @@ func (s *Server) Stop() error {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	err := s.httpServer.Shutdown(ctx)
+	if s.listener != nil {
+		_ = s.listener.Close()
+	}
 	s.isRunning = false
 	return err
 }
@@ -143,6 +170,7 @@ func (s *Server) Stop() error {
 // Rebind restarts the API server to apply updated network listening bindings.
 func (s *Server) Rebind() error {
 	_ = s.Stop()
+	time.Sleep(100 * time.Millisecond)
 	return s.Start()
 }
 
@@ -374,6 +402,11 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(logs)
 }
 
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(version.GetInfo())
+}
+
 func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
 		http.NotFound(w, r)
@@ -415,7 +448,7 @@ h1 { margin-top: 0; color: #60a5fa; font-size: 24px; display: flex; align-items:
 <body>
 <div class="card">
   <h1>Gofoom API <span class="badge %s">%s</span></h1>
-  <p style="color:#94a3b8; margin: 0 0 16px 0;">Local proxy facade and management service (v1.1.0) is active.</p>
+  <p style="color:#94a3b8; margin: 0 0 16px 0;">Local proxy facade and management service (v%s) is active.</p>
   <table class="table">
     <tr><td>Proxy Status</td><td><b>%s</b> on port <b>%d</b></td></tr>
     <tr><td>Listening Interface</td><td>%s</td></tr>
@@ -429,12 +462,14 @@ h1 { margin-top: 0; color: #60a5fa; font-size: 24px; display: flex; align-items:
     <a class="link-btn" href="/status">/status</a>
     <a class="link-btn" href="/stats">/stats</a>
     <a class="link-btn" href="/config">/config</a>
+    <a class="link-btn" href="/version">/version</a>
     <a class="link-btn" href="/logs">/logs</a>
   </div>
 </div>
 </body>
 </html>`,
 		strings.ToLower(statusStr), statusStr,
+		version.Version,
 		statusStr, cfg.LocalPort,
 		listenDesc,
 		cfg.ProxyType,

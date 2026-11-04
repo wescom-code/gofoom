@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -184,6 +186,43 @@ func TestApiServerEndpoints(t *testing.T) {
 		t.Errorf("Expected cleared key in response")
 	}
 
+	// 10c. Test Rebind preserves port!
+	oldPort := apiSrv.Port()
+	if err := apiSrv.Rebind(); err != nil {
+		t.Fatalf("Rebind failed: %v", err)
+	}
+	if apiSrv.Port() != oldPort {
+		t.Errorf("PORT DRIFTED! Expected port %d after Rebind, got %d", oldPort, apiSrv.Port())
+	}
+
+	// 10d. Test /version endpoint
+	resp, err = http.Get(apiURL + "/version")
+	if err != nil {
+		t.Fatalf("Failed to GET /version: %v", err)
+	}
+	var verInfo map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&verInfo); err != nil {
+		t.Fatalf("Failed to decode /version JSON: %v", err)
+	}
+	resp.Body.Close()
+	if verInfo["version"] != "1.2.0" {
+		t.Errorf("Expected version 1.2.0, got %v", verInfo["version"])
+	}
+	if verInfo["name"] != "Gofoom" {
+		t.Errorf("Expected name Gofoom, got %v", verInfo["name"])
+	}
+
+	// 10e. Test HTML dashboard contains dynamic version
+	resp, err = http.Get(apiURL + "/")
+	if err != nil {
+		t.Fatalf("Failed to GET /: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "(v1.2.0)") {
+		t.Errorf("Expected HTML dashboard to contain (v1.2.0), got: %s", string(body))
+	}
+
 	// 11. Test /shutdown
 	resp, err = http.Post(apiURL+"/shutdown", "text/plain", nil)
 	if err != nil {
@@ -193,5 +232,100 @@ func TestApiServerEndpoints(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	if !shutdownCalled {
 		t.Errorf("Expected shutdown callback to be triggered")
+	}
+}
+
+func TestAllowLanToggleAndStats(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Target server response 1234567890"))
+	}))
+	defer targetServer.Close()
+
+	cfgFile := t.TempDir() + "/gofoom.json"
+	cfgMgr := config.NewConfigManager(cfgFile)
+	appCfg := cfgMgr.Get()
+	appCfg.LocalPort = 13136
+	appCfg.AllowLan = false
+	_ = cfgMgr.Update(appCfg)
+
+	initialCfg := cfgMgr.ToServerConfig()
+	proxySrv := proxy.NewServer(initialCfg)
+
+	apiSrv := NewServer(19998, proxySrv, cfgMgr, nil)
+	if err := apiSrv.Start(); err != nil {
+		t.Fatalf("Failed to start API server: %v", err)
+	}
+	defer apiSrv.Stop()
+
+	apiURL := "http://127.0.0.1:19998"
+
+	// Start proxy
+	resp, err := http.Post(apiURL+"/start", "text/plain", nil)
+	if err != nil {
+		t.Fatalf("Failed to start proxy: %v", err)
+	}
+	resp.Body.Close()
+
+	proxyURL, _ := url.Parse("http://127.0.0.1:13136")
+	client := &http.Client{
+		Transport: &http.Transport{Proxy: http.ProxyURL(proxyURL)},
+		Timeout:   3 * time.Second,
+	}
+
+	// 1. Request 1
+	r1, err := client.Get(targetServer.URL + "/req1")
+	if err != nil {
+		t.Fatalf("Req 1 failed: %v", err)
+	}
+	_, _ = io.ReadAll(r1.Body)
+	r1.Body.Close()
+
+	// Check stats 1
+	resp, err = http.Get(apiURL + "/stats")
+	if err != nil {
+		t.Fatalf("Failed to get stats 1: %v", err)
+	}
+	var st1 map[string]interface{}
+	_ = json.NewDecoder(resp.Body).Decode(&st1)
+	resp.Body.Close()
+	in1 := st1["bytesReceived"].(float64)
+	t.Logf("Stats 1 bytesReceived: %v", in1)
+	if in1 == 0 {
+		t.Errorf("Expected in1 > 0")
+	}
+
+	// 2. Toggle AllowLan to true via POST /config
+	appCfg.AllowLan = true
+	cfgBytes, _ := json.Marshal(appCfg)
+	resp, err = http.Post(apiURL+"/config", "application/json", bytes.NewReader(cfgBytes))
+	if err != nil {
+		t.Fatalf("Failed to post config: %v", err)
+	}
+	resp.Body.Close()
+
+	// Wait for Rebind
+	time.Sleep(400 * time.Millisecond)
+
+	// 3. Request 2 through proxy
+	r2, err := client.Get(targetServer.URL + "/req2")
+	if err != nil {
+		t.Fatalf("Req 2 failed after allowLan change: %v", err)
+	}
+	_, _ = io.ReadAll(r2.Body)
+	r2.Body.Close()
+
+	// Check stats 2
+	resp, err = http.Get(apiURL + "/stats")
+	if err != nil {
+		t.Fatalf("Failed to get stats 2 on %s: %v", apiURL, err)
+	}
+	var st2 map[string]interface{}
+	_ = json.NewDecoder(resp.Body).Decode(&st2)
+	resp.Body.Close()
+	in2 := st2["bytesReceived"].(float64)
+	t.Logf("Stats 2 bytesReceived: %v (st1 was %v)", in2, in1)
+	if in2 <= in1 {
+		t.Errorf("Stats did not increase! in1=%v in2=%v", in1, in2)
 	}
 }

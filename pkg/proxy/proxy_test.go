@@ -216,3 +216,124 @@ func TestPacProxyFailoverAndBlacklist(t *testing.T) {
 		t.Errorf("Expected 127.0.0.1:54321 to no longer be blacklisted after ClearPacBlacklist")
 	}
 }
+
+func TestRestartAndStatsCounting(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Payload 1234567890"))
+	}))
+	defer targetServer.Close()
+
+	cfg := DefaultServerConfig()
+	cfg.LocalPort = 13132
+	proxySrv := NewServer(cfg)
+	if err := proxySrv.Start(); err != nil {
+		t.Fatalf("Start 1 failed: %v", err)
+	}
+
+	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cfg.LocalPort))
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+		Timeout: 3 * time.Second,
+	}
+
+	// First request
+	resp, err := client.Get(targetServer.URL + "/req1")
+	if err != nil {
+		t.Fatalf("Req 1 failed: %v", err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	st1 := proxySrv.GetStats()
+	t.Logf("st1: In=%d, Out=%d, Req=%d", st1.BytesReceived, st1.BytesSent, st1.TotalRequests)
+	if st1.BytesReceived == 0 {
+		t.Errorf("Expected st1.BytesReceived > 0")
+	}
+
+	// Stop then Start
+	if err := proxySrv.Stop(); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+	cfg.AllowLan = true
+	proxySrv.UpdateConfig(cfg)
+	if err := proxySrv.Start(); err != nil {
+		t.Fatalf("Start 2 failed: %v", err)
+	}
+	defer proxySrv.Stop()
+
+	// Second request
+	resp2, err := client.Get(targetServer.URL + "/req2")
+	if err != nil {
+		t.Fatalf("Req 2 failed: %v", err)
+	}
+	_, _ = io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+
+	st2 := proxySrv.GetStats()
+	t.Logf("st2: In=%d, Out=%d, Req=%d", st2.BytesReceived, st2.BytesSent, st2.TotalRequests)
+	if st2.BytesReceived <= st1.BytesReceived {
+		t.Errorf("Expected st2.BytesReceived > st1.BytesReceived, got st1=%d st2=%d", st1.BytesReceived, st2.BytesReceived)
+	}
+}
+
+func TestConnectTunnelRestartAndStatsCounting(t *testing.T) {
+	targetServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("TLS payload 1234567890"))
+	}))
+	defer targetServer.Close()
+
+	cfg := DefaultServerConfig()
+	cfg.LocalPort = 13133
+	proxySrv := NewServer(cfg)
+	if err := proxySrv.Start(); err != nil {
+		t.Fatalf("Start 1 failed: %v", err)
+	}
+
+	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cfg.LocalPort))
+	client := targetServer.Client()
+	client.Transport.(*http.Transport).Proxy = http.ProxyURL(proxyURL)
+
+	// First request
+	resp, err := client.Get(targetServer.URL + "/tls1")
+	if err != nil {
+		t.Fatalf("Req 1 failed: %v", err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	st1 := proxySrv.GetStats()
+	t.Logf("st1: In=%d, Out=%d, Connects=%d, Req=%d", st1.BytesReceived, st1.BytesSent, st1.TotalConnects, st1.TotalRequests)
+	if st1.BytesReceived == 0 || st1.BytesSent == 0 {
+		t.Errorf("Expected st1.BytesReceived > 0 and st1.BytesSent > 0")
+	}
+
+	// Stop then Start
+	if err := proxySrv.Stop(); err != nil {
+		t.Fatalf("Stop failed: %v", err)
+	}
+	cfg.AllowLan = true
+	proxySrv.UpdateConfig(cfg)
+	if err := proxySrv.Start(); err != nil {
+		t.Fatalf("Start 2 failed: %v", err)
+	}
+	defer proxySrv.Stop()
+
+	// Second request
+	resp2, err := client.Get(targetServer.URL + "/tls2")
+	if err != nil {
+		t.Fatalf("Req 2 failed: %v", err)
+	}
+	_, _ = io.ReadAll(resp2.Body)
+	resp2.Body.Close()
+
+	st2 := proxySrv.GetStats()
+	t.Logf("st2: In=%d, Out=%d, Connects=%d, Req=%d", st2.BytesReceived, st2.BytesSent, st2.TotalConnects, st2.TotalRequests)
+	if st2.BytesReceived <= st1.BytesReceived || st2.BytesSent <= st1.BytesSent {
+		t.Errorf("Expected st2 > st1, got st1=(In:%d, Out:%d) st2=(In:%d, Out:%d)",
+			st1.BytesReceived, st1.BytesSent, st2.BytesReceived, st2.BytesSent)
+	}
+}

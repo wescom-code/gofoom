@@ -115,21 +115,27 @@ When running in headless or GUI mode, Gofoom exposes a local API on `http://127.
 - Node.js & npm (optional, prebuilt `frontend/dist` is already included)
 
 ### Compile
+Use the automated build script (synchronizes version metadata and Windows PE executable resources automatically):
 ```powershell
-# Build development executable
-go build -o bin/gofoom_dev.exe ./cmd/gofoom
+# Build production silent executable (No console window, icon & PE version metadata embedded)
+.\build.ps1
 
-# Build production silent executable (No black console window, icon embedded)
-go build -ldflags "-w -s -H windowsgui" -o bin/gofoom.exe ./cmd/gofoom
+# Build development executable (with console window enabled for debugging)
+.\build.ps1 -Dev
+```
+
+Or manually with standard Go toolchain:
+```powershell
+# 1. Synchronize Windows PE metadata
+go generate ./...
+
+# 2. Build production executable
+go build -ldflags "-s -w -H=windowsgui" -o bin/gofoom.exe ./cmd/gofoom
 ```
 
 ### Run Tests
 ```powershell
-go test -v ./pkg/proxy
-go test -v ./pkg/auth
-go test -v ./pkg/pac
-go test -v ./pkg/api
-go test -v ./pkg/sysproxy
+go test -v ./...
 ```
 
 ---

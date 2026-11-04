@@ -434,6 +434,9 @@
       if (level === "WARN") lvlClass = "log-warn";
       line.innerHTML = `<span class="log-time">[${ts}]</span> <span class="${lvlClass}">[${level}]</span> ${msg}`;
       box.appendChild(line);
+      while (box.children.length > 150) {
+        box.removeChild(box.firstChild);
+      }
       box.scrollTop = box.scrollHeight;
     }
 
@@ -618,10 +621,11 @@
 
     function renderStats(stats) {
       if (!stats) return;
-      document.getElementById("statActive").innerText = stats.activeConnections || 0;
-      document.getElementById("statRequests").innerText = stats.totalRequests || 0;
-      document.getElementById("statIn").innerText = formatBytes(stats.bytesReceived);
-      document.getElementById("statOut").innerText = formatBytes(stats.bytesSent);
+      const s = (stats.data !== undefined) ? stats.data : stats;
+      document.getElementById("statActive").innerText = s.activeConnections || 0;
+      document.getElementById("statRequests").innerText = s.totalRequests || 0;
+      document.getElementById("statIn").innerText = formatBytes(s.bytesReceived);
+      document.getElementById("statOut").innerText = formatBytes(s.bytesSent);
     }
 
     async function updateStats() {
@@ -634,32 +638,62 @@
       } catch (e) {}
     }
 
-    let seenLogs = 0;
+    let lastLogTs = 0;
     async function updateLogs() {
       try {
         const res = await fetch(API_BASE + "/logs");
         if (res.ok) {
           const logs = await res.json();
-          if (Array.isArray(logs) && logs.length > seenLogs) {
-            for (let i = seenLogs; i < logs.length; i++) {
+          if (Array.isArray(logs) && logs.length > 0) {
+            let maxTs = lastLogTs;
+            for (let i = 0; i < logs.length; i++) {
               const ev = logs[i];
-              const time = new Date(ev.timestamp).toLocaleTimeString();
-              let target = ev.target || "";
-              let method = ev.method || "";
-              let status = ev.status || "";
-              let msg = ev.message || "";
-              let logText = method ? `${method} ${target} -> ${status} (${msg})` : msg;
-              addLog(time, ev.level || "INFO", logText);
+              const evTime = new Date(ev.timestamp).getTime();
+              if (evTime > lastLogTs) {
+                const time = new Date(ev.timestamp).toLocaleTimeString();
+                let target = ev.target || "";
+                let method = ev.method || "";
+                let status = ev.status || "";
+                let msg = ev.message || "";
+                let logText = method ? `${method} ${target} -> ${status} (${msg})` : msg;
+                addLog(time, ev.level || "INFO", logText);
+                if (evTime > maxTs) maxTs = evTime;
+              }
             }
-            seenLogs = logs.length;
+            lastLogTs = maxTs;
           }
         }
       } catch (e) {}
     }
 
+    let statusTimer = null;
+    let statsTimer = null;
+    let logsTimer = null;
+
+    function startTimers() {
+      if (!statusTimer) statusTimer = setInterval(updateStatus, 3000);
+      if (!statsTimer) statsTimer = setInterval(updateStats, 1000);
+      if (!logsTimer) logsTimer = setInterval(updateLogs, 1500);
+    }
+
+    function stopTimers() {
+      if (statusTimer) { clearInterval(statusTimer); statusTimer = null; }
+      if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
+      if (logsTimer) { clearInterval(logsTimer); logsTimer = null; }
+    }
+
     // Connect to Wails event bus if available, or poll
     window.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("brandSubtitle").textContent = "v1.2.0 (API :" + apiPort + ")";
+      const appVer = window.GOFOOM_VERSION || "1.2.0";
+      document.getElementById("brandSubtitle").textContent = "v" + appVer + " (API :" + apiPort + ")";
+      fetch(API_BASE + "/version")
+        .then(r => r.json())
+        .then(data => {
+          if (data && data.version) {
+            document.getElementById("brandSubtitle").textContent = "v" + data.version + " (API :" + apiPort + ")";
+          }
+        })
+        .catch(() => {});
       const initMsg = document.getElementById("sysInitMsg");
       if (initMsg) initMsg.textContent = "Gofoom UI ready. Local API active on :" + apiPort + ".";
 
@@ -667,22 +701,32 @@
       updateStatus();
       updateStats();
       updateLogs();
+      startTimers();
 
-      setInterval(updateStatus, 3000);
-      setInterval(updateStats, 1000);
-      setInterval(updateLogs, 1500);
+      // Pause intervals when window is hidden/minimized to system tray to save WebView2 memory & CPU
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) {
+          stopTimers();
+        } else {
+          updateStatus();
+          updateStats();
+          updateLogs();
+          startTimers();
+        }
+      });
 
       // Listen to Wails v3 events if runtime exists
       if (window.wails && window.wails.Events) {
         window.wails.Events.On("gofoom:log", (ev) => {
-          if (ev) {
-            const time = new Date(ev.timestamp).toLocaleTimeString();
-            let target = ev.target || "";
-            let method = ev.method || "";
-            let status = ev.status || "";
-            let msg = ev.message || "";
+          const item = (ev && ev.data !== undefined) ? ev.data : ev;
+          if (item) {
+            const time = new Date(item.timestamp).toLocaleTimeString();
+            let target = item.target || "";
+            let method = item.method || "";
+            let status = item.status || "";
+            let msg = item.message || "";
             let logText = method ? `${method} ${target} -> ${status} (${msg})` : msg;
-            addLog(time, ev.level || "INFO", logText);
+            addLog(time, item.level || "INFO", logText);
           }
         });
         window.wails.Events.On("gofoom:stats", (stats) => {

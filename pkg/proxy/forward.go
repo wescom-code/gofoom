@@ -104,6 +104,13 @@ func (s *ProxyServer) handleForward(w http.ResponseWriter, r *http.Request) {
 	outReq.Header = r.Header.Clone()
 	removeHopByHopHeaders(outReq.Header)
 
+	// Measure outbound request bytes
+	outBytes := uint64(len(r.Method) + len(targetURL.String()) + 200)
+	if r.ContentLength > 0 {
+		outBytes += uint64(r.ContentLength)
+	}
+	s.stats.AddBytesOut(outBytes)
+
 	// Add standard forwarding metadata
 	clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err == nil {

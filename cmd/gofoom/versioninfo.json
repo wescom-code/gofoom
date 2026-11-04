@@ -1,0 +1,42 @@
+{
+	"FixedFileInfo": {
+		"FileVersion": {
+			"Major": 1,
+			"Minor": 2,
+			"Patch": 0,
+			"Build": 0
+		},
+		"ProductVersion": {
+			"Major": 1,
+			"Minor": 2,
+			"Patch": 0,
+			"Build": 0
+		},
+		"FileFlagsMask": "3f",
+		"FileFlags ": "00",
+		"FileOS": "040004",
+		"FileType": "01",
+		"FileSubType": "00"
+	},
+	"StringFileInfo": {
+		"Comments": "High-Performance Proxy Facade with PAC, SOCKS5 \u0026 Fallback",
+		"CompanyName": "Gofoom Authors",
+		"FileDescription": "Gofoom Proxy Server",
+		"FileVersion": "1.2.0.0",
+		"InternalName": "gofoom",
+		"LegalCopyright": "Copyright (c) 2026 Gofoom Authors",
+		"LegalTrademarks": "",
+		"OriginalFilename": "gofoom.exe",
+		"PrivateBuild": "",
+		"ProductName": "Gofoom",
+		"ProductVersion": "1.2.0",
+		"SpecialBuild": ""
+	},
+	"VarFileInfo": {
+		"Translation": {
+			"LangID": "0409",
+			"CharsetID": "04B0"
+		}
+	},
+	"IconPath": "../../build/app.ico"
+}

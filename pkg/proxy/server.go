@@ -24,12 +24,16 @@ type ProxyServer struct {
 	logListeners []chan LogEvent
 	logMu        sync.RWMutex
 	pacEvaluator *pac.PacEvaluator
+
+	activeConns   map[net.Conn]struct{}
+	activeConnsMu sync.Mutex
 }
 
 // NewServer creates a new ProxyServer instance.
 func NewServer(cfg ServerConfig) *ProxyServer {
 	s := &ProxyServer{
-		config: cfg,
+		config:      cfg,
+		activeConns: make(map[net.Conn]struct{}),
 	}
 	s.initPacEvaluator()
 	s.transport = s.createTransport()
@@ -88,7 +92,7 @@ func (s *ProxyServer) Start() error {
 	return nil
 }
 
-// Stop gracefully stops the proxy server.
+// Stop gracefully stops the proxy server and terminates all active connections.
 func (s *ProxyServer) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -97,10 +101,21 @@ func (s *ProxyServer) Stop() error {
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// Close all active hijacked/duplex connections so they don't linger
+	s.activeConnsMu.Lock()
+	for c := range s.activeConns {
+		_ = c.Close()
+	}
+	s.activeConns = make(map[net.Conn]struct{})
+	s.activeConnsMu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	err := s.httpServer.Shutdown(ctx)
+	if s.listener != nil {
+		_ = s.listener.Close()
+	}
 	s.isRunning = false
 	if s.transport != nil {
 		s.transport.CloseIdleConnections()
@@ -112,6 +127,24 @@ func (s *ProxyServer) Stop() error {
 		Message:   "Gofoom Proxy Server stopped",
 	})
 	return err
+}
+
+func (s *ProxyServer) trackConn(c net.Conn) {
+	if c == nil {
+		return
+	}
+	s.activeConnsMu.Lock()
+	defer s.activeConnsMu.Unlock()
+	s.activeConns[c] = struct{}{}
+}
+
+func (s *ProxyServer) untrackConn(c net.Conn) {
+	if c == nil {
+		return
+	}
+	s.activeConnsMu.Lock()
+	defer s.activeConnsMu.Unlock()
+	delete(s.activeConns, c)
 }
 
 // IsRunning reports whether the proxy is currently running.

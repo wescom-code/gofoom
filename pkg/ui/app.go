@@ -14,10 +14,20 @@ import (
 	"gofoom/pkg/config"
 	"gofoom/pkg/proxy"
 	"gofoom/pkg/sysproxy"
+	"gofoom/pkg/version"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 )
+
+func init() {
+	// Optimize WebView2 memory: limit V8 heap, disable disk shader cache, minimize background footprint
+	existingArgs := os.Getenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
+	optArgs := "--js-flags=\"--max-old-space-size=64\" --disable-gpu-shader-disk-cache --disable-features=Translate,MediaRouter"
+	if existingArgs == "" {
+		_ = os.Setenv("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", optArgs)
+	}
+}
 
 // AppUI coordinates the Wails v3 desktop GUI and system tray.
 type AppUI struct {
@@ -28,6 +38,7 @@ type AppUI struct {
 	apiServer   *api.Server
 	iconBytes   []byte
 	assets      fs.FS
+	lastTitle   string
 }
 
 // NewAppUI initializes the AppUI manager.
@@ -78,15 +89,18 @@ func (u *AppUI) Run(startMinimized bool) error {
 		apiPort = u.apiServer.Port()
 	}
 
+	initialTitle := u.getStatusTitle()
+	u.lastTitle = initialTitle
+
 	// Create Webview Window
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:         fmt.Sprintf("Gofoom (:%d)", u.configMgr.Get().LocalPort),
+		Title:         initialTitle,
 		Width:         620,
 		Height:        780,
 		Hidden:        startMinimized,
 		DisableResize: false,
 		URL:           fmt.Sprintf("/?apiPort=%d", apiPort),
-		JS:            fmt.Sprintf("window.GOFOOM_API_PORT = %d;", apiPort),
+		JS:            fmt.Sprintf("window.GOFOOM_API_PORT = %d; window.GOFOOM_VERSION = %q;", apiPort, version.Version),
 	})
 	u.window = win
 
@@ -217,6 +231,24 @@ func (u *AppUI) Run(startMinimized bool) error {
 	return app.Run()
 }
 
+func (u *AppUI) getStatusTitle() string {
+	running := u.proxyServer.IsRunning()
+	status := "STOPPED"
+	if running {
+		status = "RUNNING"
+	}
+	cfg := u.configMgr.Get()
+	exePath, _ := os.Executable()
+	dirName := filepath.Base(filepath.Dir(exePath))
+	if dirName == "" || dirName == "." || dirName == "bin" {
+		parent := filepath.Base(filepath.Dir(filepath.Dir(exePath)))
+		if parent != "" && parent != "." {
+			dirName = parent
+		}
+	}
+	return fmt.Sprintf("Gofoom [%s]: %s (:%d -> %s)", dirName, status, cfg.LocalPort, cfg.ProxyType)
+}
+
 func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggleItem, autoStartItem, startMinItem, startupItem *application.MenuItem) {
 	running := u.proxyServer.IsRunning()
 	status := "STOPPED"
@@ -237,13 +269,11 @@ func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggle
 	if startupItem != nil {
 		startupItem.SetChecked(sysproxy.IsWindowsStartupEnabled())
 	}
-	exePath, _ := os.Executable()
-	dirName := filepath.Base(filepath.Dir(exePath))
-	if dirName == "" || dirName == "." || dirName == "bin" {
-		parent := filepath.Base(filepath.Dir(filepath.Dir(exePath)))
-		if parent != "" && parent != "." {
-			dirName = parent
-		}
+
+	title := u.getStatusTitle()
+	tray.SetTooltip(title)
+	if u.window != nil && u.lastTitle != title {
+		u.lastTitle = title
+		u.window.SetTitle(title)
 	}
-	tray.SetTooltip(fmt.Sprintf("Gofoom [%s]: %s (:%d -> %s)", dirName, status, cfg.LocalPort, cfg.ProxyType))
 }

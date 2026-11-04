@@ -104,6 +104,8 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer upstreamConn.Close()
+	s.trackConn(upstreamConn)
+	defer s.untrackConn(upstreamConn)
 
 	// Hijack client connection
 	hijacker, ok := w.(http.Hijacker)
@@ -120,6 +122,8 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer clientConn.Close()
+	s.trackConn(clientConn)
+	defer s.untrackConn(clientConn)
 
 	// Write 200 Connection Established to client
 	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\nProxy-Agent: Gofoom/1.1\r\n\r\n"))
