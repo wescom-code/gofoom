@@ -47,6 +47,7 @@ type UpstreamConfig struct {
 	UseCurrentCredentials bool      `json:"useCurrentCredentials"`
 	HttpAuthProtocol      string    `json:"httpAuthProtocol,omitempty"` // NTLM, BASIC, KERBEROS, etc.
 	PacFileLocation       string    `json:"pacFileLocation,omitempty"`
+	BlacklistTimeout      int       `json:"blacklistTimeout,omitempty"` // in minutes, default 5
 }
 
 // ServerConfig holds the proxy server configuration.

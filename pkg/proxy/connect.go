@@ -38,9 +38,56 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.config.ConnectTimeout)
 	defer cancel()
 
-	// Dial upstream (DIRECT, SOCKS, or upstream HTTP proxy)
-	dialer := NewUpstreamDialer(s.config.Upstream, s.config.ConnectTimeout)
-	upstreamConn, err := dialer.DialTunnel(ctx, target)
+	var upstreamConn net.Conn
+	var err error
+
+	if s.config.Upstream.Type == ProxyTypePAC && s.pacEvaluator != nil {
+		targetHost := target
+		if h, _, splitErr := net.SplitHostPort(target); splitErr == nil {
+			targetHost = h
+		}
+		rawURL := "https://" + target
+		candidates, evalErr := s.pacEvaluator.FindProxyForURL(rawURL, targetHost)
+		if evalErr != nil || len(candidates) == 0 {
+			dialer := NewUpstreamDialer(UpstreamConfig{Type: ProxyTypeDirect}, s.config.ConnectTimeout)
+			upstreamConn, err = dialer.DialTunnel(ctx, target)
+		} else {
+			for _, cand := range candidates {
+				candCfg := s.config.Upstream
+				candType, normErr := NormalizeProxyType(cand.Type)
+				if normErr != nil {
+					candType = ProxyTypeHTTP
+				}
+				candCfg.Type = candType
+				candCfg.Host = cand.Host
+				candCfg.Port = cand.Port
+
+				candDialer := NewUpstreamDialer(candCfg, s.config.ConnectTimeout)
+				conn, dialErr := candDialer.DialTunnel(ctx, target)
+				if dialErr == nil {
+					upstreamConn = conn
+					err = nil
+					break
+				}
+				err = dialErr
+				if cand.Type != "DIRECT" {
+					s.pacEvaluator.Blacklist().Add(cand.Host, cand.Port)
+					s.log(LogEvent{
+						Timestamp: time.Now(),
+						Level:     "WARN",
+						Client:    r.RemoteAddr,
+						Method:    "CONNECT",
+						Target:    target,
+						Message:   fmt.Sprintf("PAC proxy %s:%d failed (%v); blacklisted and failing over", cand.Host, cand.Port, dialErr),
+					})
+				}
+			}
+		}
+	} else {
+		dialer := NewUpstreamDialer(s.config.Upstream, s.config.ConnectTimeout)
+		upstreamConn, err = dialer.DialTunnel(ctx, target)
+	}
+
 	if err != nil {
 		s.stats.IncErrors()
 		s.log(LogEvent{

@@ -203,7 +203,7 @@
   <header>
     <div class="brand">
       <h1>Gofoom</h1>
-      <span id="brandSubtitle">v1.1.0</span>
+      <span id="brandSubtitle">v1.2.0</span>
     </div>
     <div style="display: flex; gap: 10px; align-items: center;">
       <button class="btn btn-outline btn-sm" onclick="openPrefModal()">⚙ Preferences</button>
@@ -275,18 +275,39 @@
       </div>
 
       <!-- PAC File Location -->
-      <div id="pacSection" class="form-group" style="display:none;">
-        <label>PAC File Location or URL</label>
-        <input type="text" id="pacLocation" placeholder="http://wpad/wpad.dat or C:\proxy.pac">
+      <div id="pacSection" style="display:none;">
+        <div class="form-group">
+          <label>PAC File Location or URL</label>
+          <input type="text" id="pacLocation" placeholder="http://wpad/wpad.dat or C:\proxy.pac">
+        </div>
+        <div class="form-row" style="margin-top: 10px; align-items: flex-end;">
+          <div class="form-group">
+            <label>Blacklist Timeout (mins)</label>
+            <input type="number" id="blacklistTimeout" value="5" min="1" max="1440">
+          </div>
+          <div class="form-group" style="display: flex; align-items: flex-end;">
+            <button class="btn btn-outline" style="width: 100%; white-space: nowrap;" onclick="clearBlacklist()">Clear Blacklist</button>
+          </div>
+        </div>
       </div>
 
       <!-- Authentication -->
       <div id="authSection">
-        <div class="form-group">
+        <div id="sspiSection" class="form-group">
           <label class="checkbox-group">
             <input type="checkbox" id="useCurrentCreds" onchange="onUseCurrentCredsChange()">
             <span>Use Current Windows User Credentials (SSPI / NTLM / Kerberos SSO)</span>
           </label>
+        </div>
+
+        <div id="authProtocolSection" class="form-group">
+          <label>Authentication Protocol</label>
+          <select id="httpAuthProtocol">
+            <option value="NTLM">NTLM</option>
+            <option value="KERBEROS">Kerberos / Negotiate</option>
+            <option value="BASIC">Basic</option>
+            <option value="AUTO">Auto Detect</option>
+          </select>
         </div>
 
         <div id="manualCredsSection" class="form-row">
@@ -420,18 +441,47 @@
       document.getElementById("logBox").innerHTML = "";
     }
 
+    async function clearBlacklist() {
+      try {
+        const res = await fetch(API_BASE + "/blacklist/clear", { method: "POST" });
+        if (res.ok) {
+          const data = await res.json();
+          showToast(data.message || `Cleared ${data.cleared || 0} blacklisted proxies`);
+        } else {
+          showToast("Failed to clear blacklist");
+        }
+      } catch (e) {
+        showToast("Error clearing blacklist: " + e.message);
+      }
+    }
+
     function onProxyTypeChange() {
       const t = document.getElementById("proxyType").value;
       document.getElementById("hostPortSection").style.display = (t === "HTTP" || t === "SOCKS5" || t === "SOCKS4") ? "grid" : "none";
       document.getElementById("pacSection").style.display = (t === "PAC") ? "block" : "none";
-      document.getElementById("authSection").style.display = (t === "HTTP") ? "block" : "none";
+      document.getElementById("authSection").style.display = (t === "HTTP" || t === "PAC" || t === "SOCKS5") ? "block" : "none";
+
+      const isHttpOrPac = (t === "HTTP" || t === "PAC");
+      document.getElementById("sspiSection").style.display = isHttpOrPac ? "block" : "none";
+      document.getElementById("authProtocolSection").style.display = isHttpOrPac ? "block" : "none";
+
+      onUseCurrentCredsChange();
     }
 
     function onUseCurrentCredsChange() {
-      const checked = document.getElementById("useCurrentCreds").checked;
-      document.getElementById("manualCredsSection").style.opacity = checked ? "0.4" : "1.0";
-      document.getElementById("proxyUser").disabled = checked;
-      document.getElementById("proxyPass").disabled = checked;
+      const t = document.getElementById("proxyType").value;
+      if (t === "SOCKS5") {
+        document.getElementById("manualCredsSection").style.opacity = "1.0";
+        document.getElementById("proxyUser").disabled = false;
+        document.getElementById("proxyPass").disabled = false;
+      } else {
+        const checked = document.getElementById("useCurrentCreds").checked;
+        document.getElementById("manualCredsSection").style.opacity = checked ? "0.4" : "1.0";
+        document.getElementById("proxyUser").disabled = checked;
+        document.getElementById("proxyPass").disabled = checked;
+        document.getElementById("authProtocolSection").style.opacity = checked ? "0.4" : "1.0";
+        document.getElementById("httpAuthProtocol").disabled = checked;
+      }
     }
 
     async function loadConfig() {
@@ -444,7 +494,9 @@
           document.getElementById("proxyHost").value = cfg.proxyHost || "";
           document.getElementById("proxyPort").value = cfg.proxyPort || "";
           document.getElementById("pacLocation").value = cfg.pacFileLocation || "";
+          document.getElementById("blacklistTimeout").value = cfg.blacklistTimeout || 5;
           document.getElementById("useCurrentCreds").checked = cfg.useCurrentCredentials ?? true;
+          document.getElementById("httpAuthProtocol").value = cfg.httpAuthProtocol || "NTLM";
           document.getElementById("proxyUser").value = cfg.proxyUsername || "";
           document.getElementById("proxyPass").value = cfg.proxyPassword || "";
           document.getElementById("testUrl").value = cfg.proxyTestUrl || "https://example.com";
@@ -467,7 +519,9 @@
         proxyHost: document.getElementById("proxyHost").value,
         proxyPort: parseInt(document.getElementById("proxyPort").value, 10) || 0,
         pacFileLocation: document.getElementById("pacLocation").value,
+        blacklistTimeout: parseInt(document.getElementById("blacklistTimeout").value, 10) || 5,
         useCurrentCredentials: document.getElementById("useCurrentCreds").checked,
+        httpAuthProtocol: document.getElementById("httpAuthProtocol").value,
         proxyUsername: document.getElementById("proxyUser").value,
         proxyPassword: document.getElementById("proxyPass").value,
         proxyTestUrl: document.getElementById("testUrl").value,
@@ -605,7 +659,7 @@
 
     // Connect to Wails event bus if available, or poll
     window.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("brandSubtitle").textContent = "v1.1.0 (API :" + apiPort + ")";
+      document.getElementById("brandSubtitle").textContent = "v1.2.0 (API :" + apiPort + ")";
       const initMsg = document.getElementById("sysInitMsg");
       if (initMsg) initMsg.textContent = "Gofoom UI ready. Local API active on :" + apiPort + ".";
 

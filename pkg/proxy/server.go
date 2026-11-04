@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"gofoom/pkg/pac"
 )
 
 // ProxyServer is the local proxy facade server.
@@ -21,6 +23,7 @@ type ProxyServer struct {
 	recentLogs   []LogEvent
 	logListeners []chan LogEvent
 	logMu        sync.RWMutex
+	pacEvaluator *pac.PacEvaluator
 }
 
 // NewServer creates a new ProxyServer instance.
@@ -28,6 +31,7 @@ func NewServer(cfg ServerConfig) *ProxyServer {
 	s := &ProxyServer{
 		config: cfg,
 	}
+	s.initPacEvaluator()
 	s.transport = s.createTransport()
 	return s
 }
@@ -129,10 +133,62 @@ func (s *ProxyServer) UpdateConfig(cfg ServerConfig) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.config = cfg
+	s.initPacEvaluator()
 	if s.transport != nil {
 		s.transport.CloseIdleConnections()
 	}
 	s.transport = s.createTransport()
+}
+
+func (s *ProxyServer) initPacEvaluator() {
+	if s.config.Upstream.Type == ProxyTypePAC && s.config.Upstream.PacFileLocation != "" {
+		eval, err := pac.NewEvaluatorFromLocation(s.config.Upstream.PacFileLocation)
+		if err != nil {
+			s.log(LogEvent{
+				Timestamp: time.Now(),
+				Level:     "WARN",
+				Message:   fmt.Sprintf("Failed to load PAC script from %s: %v", s.config.Upstream.PacFileLocation, err),
+			})
+			s.pacEvaluator = nil
+			return
+		}
+		ttl := time.Duration(s.config.Upstream.BlacklistTimeout) * time.Minute
+		if ttl <= 0 {
+			ttl = 5 * time.Minute
+		}
+		eval.SetBlacklistTTL(ttl)
+		s.pacEvaluator = eval
+		s.log(LogEvent{
+			Timestamp: time.Now(),
+			Level:     "INFO",
+			Message:   fmt.Sprintf("PAC evaluator loaded from %s (Blacklist TTL: %v)", s.config.Upstream.PacFileLocation, ttl),
+		})
+	} else {
+		s.pacEvaluator = nil
+	}
+}
+
+// ClearPacBlacklist clears the blacklist of unreachable PAC proxies and returns the cleared count.
+func (s *ProxyServer) ClearPacBlacklist() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.pacEvaluator != nil {
+		cleared := s.pacEvaluator.Blacklist().Clear()
+		s.log(LogEvent{
+			Timestamp: time.Now(),
+			Level:     "INFO",
+			Message:   fmt.Sprintf("Cleared %d entries from PAC proxy blacklist", cleared),
+		})
+		return cleared
+	}
+	return 0
+}
+
+// GetPacEvaluator returns the active PAC evaluator if any.
+func (s *ProxyServer) GetPacEvaluator() *pac.PacEvaluator {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.pacEvaluator
 }
 
 // Restart restarts the server with potentially new configuration.

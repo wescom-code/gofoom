@@ -118,6 +118,20 @@ func (s *ProxyServer) handleForward(w http.ResponseWriter, r *http.Request) {
 	resp, err := transport.RoundTrip(outReq)
 	if err != nil {
 		s.stats.IncErrors()
+		if s.config.Upstream.Type == ProxyTypePAC && s.pacEvaluator != nil {
+			candidates, evalErr := s.pacEvaluator.FindProxyForURL(targetURL.String(), targetURL.Hostname())
+			if evalErr == nil && len(candidates) > 0 && candidates[0].Type != "DIRECT" {
+				s.pacEvaluator.Blacklist().Add(candidates[0].Host, candidates[0].Port)
+				s.log(LogEvent{
+					Timestamp: time.Now(),
+					Level:     "WARN",
+					Client:    r.RemoteAddr,
+					Method:    r.Method,
+					Target:    targetURL.String(),
+					Message:   fmt.Sprintf("PAC proxy %s:%d failed (%v); added to blacklist", candidates[0].Host, candidates[0].Port, err),
+				})
+			}
+		}
 		s.log(LogEvent{
 			Timestamp: time.Now(),
 			Level:     "ERROR",
@@ -197,6 +211,33 @@ func (s *ProxyServer) createTransport() *http.Transport {
 			transport.ProxyConnectHeader = http.Header{
 				"Proxy-Authorization": []string{"Basic " + auth},
 			}
+		}
+
+	case ProxyTypePAC:
+		transport.Proxy = func(req *http.Request) (*url.URL, error) {
+			if s.pacEvaluator == nil {
+				return nil, nil
+			}
+			candidates, err := s.pacEvaluator.FindProxyForURL(req.URL.String(), req.URL.Hostname())
+			if err != nil || len(candidates) == 0 {
+				return nil, nil
+			}
+			for _, cand := range candidates {
+				if cand.Type == "DIRECT" {
+					return nil, nil
+				}
+				if cand.Type == "HTTP" {
+					proxyURLStr := fmt.Sprintf("http://%s:%d", cand.Host, cand.Port)
+					u, parseErr := url.Parse(proxyURLStr)
+					if parseErr == nil {
+						if s.config.Upstream.Username != "" && !s.config.Upstream.UseCurrentCredentials {
+							u.User = url.UserPassword(s.config.Upstream.Username, s.config.Upstream.Password)
+						}
+						return u, nil
+					}
+				}
+			}
+			return nil, nil
 		}
 
 	case ProxyTypeSocks4, ProxyTypeSocks5:

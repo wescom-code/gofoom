@@ -46,9 +46,40 @@ func (b *Blacklist) IsBlacklisted(host string, port int) bool {
 	return time.Now().Before(expiry)
 }
 
-// Clear removes all blacklisted entries.
-func (b *Blacklist) Clear() {
+// SetTTL updates the blacklist expiration TTL.
+func (b *Blacklist) SetTTL(ttl time.Duration) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if ttl > 0 {
+		b.ttl = ttl
+	}
+}
+
+// Clear removes all blacklisted entries and returns the count of active entries that were cleared.
+func (b *Blacklist) Clear() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	count := 0
+	now := time.Now()
+	for _, expiry := range b.entries {
+		if now.Before(expiry) {
+			count++
+		}
+	}
 	b.entries = make(map[string]time.Time)
+	return count
+}
+
+// ActiveCount returns the number of currently active blacklisted endpoints.
+func (b *Blacklist) ActiveCount() int {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	count := 0
+	now := time.Now()
+	for _, expiry := range b.entries {
+		if now.Before(expiry) {
+			count++
+		}
+	}
+	return count
 }

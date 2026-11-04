@@ -149,6 +149,13 @@ func (e *PacEvaluator) Blacklist() *Blacklist {
 	return e.blacklist
 }
 
+// SetBlacklistTTL updates the timeout duration for blacklisting proxies.
+func (e *PacEvaluator) SetBlacklistTTL(ttl time.Duration) {
+	if e.blacklist != nil {
+		e.blacklist.SetTTL(ttl)
+	}
+}
+
 // ParsePacResult parses return strings like:
 // "PROXY proxy1.example.com:8080; SOCKS5 127.0.0.1:1080; DIRECT"
 func ParsePacResult(res string) []ProxyCandidate {

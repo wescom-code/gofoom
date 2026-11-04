@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -143,5 +144,75 @@ func TestDirectConnectTunnel(t *testing.T) {
 	}
 	if stats.BytesSent == 0 {
 		t.Errorf("Expected stats.BytesSent > 0, got %d", stats.BytesSent)
+	}
+}
+
+func TestPacProxyFailoverAndBlacklist(t *testing.T) {
+	// 1. Setup mock target TLS/HTTPS server
+	targetServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("PAC failover to direct succeeded!"))
+	}))
+	defer targetServer.Close()
+
+	// 2. Create a local PAC script pointing to a non-existent port first, then DIRECT
+	pacScript := fmt.Sprintf(`function FindProxyForURL(url, host) {
+		return "PROXY 127.0.0.1:54321; DIRECT";
+	}`)
+	pacFile := t.TempDir() + "/test.pac"
+	if err := os.WriteFile(pacFile, []byte(pacScript), 0644); err != nil {
+		t.Fatalf("Failed to write test PAC file: %v", err)
+	}
+
+	// 3. Start Gofoom Proxy Server configured with PAC
+	cfg := DefaultServerConfig()
+	cfg.LocalPort = 13131
+	cfg.ConnectTimeout = 1 * time.Second
+	cfg.Upstream = UpstreamConfig{
+		Type:             ProxyTypePAC,
+		PacFileLocation:  pacFile,
+		BlacklistTimeout: 5,
+	}
+
+	proxySrv := NewServer(cfg)
+	if err := proxySrv.Start(); err != nil {
+		t.Fatalf("Failed to start proxy server: %v", err)
+	}
+	defer proxySrv.Stop()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// 4. Client sends HTTPS request through Gofoom proxy
+	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cfg.LocalPort))
+	client := targetServer.Client()
+	client.Transport.(*http.Transport).Proxy = http.ProxyURL(proxyURL)
+
+	resp, err := client.Get(targetServer.URL + "/pac-test")
+	if err != nil {
+		t.Fatalf("Client request failed during PAC failover: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "PAC failover to direct succeeded!") {
+		t.Errorf("Unexpected body: %s", string(body))
+	}
+
+	// 5. Verify that 127.0.0.1:54321 was added to the PAC blacklist
+	eval := proxySrv.GetPacEvaluator()
+	if eval == nil {
+		t.Fatalf("Expected non-nil PacEvaluator")
+	}
+	if !eval.Blacklist().IsBlacklisted("127.0.0.1", 54321) {
+		t.Errorf("Expected 127.0.0.1:54321 to be blacklisted after failure")
+	}
+
+	// 6. Test ClearPacBlacklist
+	cleared := proxySrv.ClearPacBlacklist()
+	if cleared != 1 {
+		t.Errorf("Expected 1 entry cleared, got %d", cleared)
+	}
+	if eval.Blacklist().IsBlacklisted("127.0.0.1", 54321) {
+		t.Errorf("Expected 127.0.0.1:54321 to no longer be blacklisted after ClearPacBlacklist")
 	}
 }

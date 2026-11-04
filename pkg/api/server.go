@@ -93,6 +93,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/config", s.handleConfig)
 	mux.HandleFunc("/autodetect", s.handleAutodetect)
 	mux.HandleFunc("/validate", s.handleValidate)
+	mux.HandleFunc("/blacklist/clear", s.handleClearBlacklist)
 	mux.HandleFunc("/shutdown", s.handleShutdown)
 
 	s.listener = listener
@@ -318,6 +319,15 @@ func (s *Server) handleValidate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _ = fmt.Fprintf(w, "The configuration is valid (Connected to %s, Status: %d)\n", parsedURL.Host, resp.StatusCode)
+}
+
+func (s *Server) handleClearBlacklist(w http.ResponseWriter, r *http.Request) {
+	cleared := s.proxyServer.ClearPacBlacklist()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+		"cleared": cleared,
+		"message": fmt.Sprintf("Cleared %d blacklisted proxies", cleared),
+	})
 }
 
 func (s *Server) handleShutdown(w http.ResponseWriter, r *http.Request) {

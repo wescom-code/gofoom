@@ -1,6 +1,6 @@
 # Gofoom
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/version-1.2.0-blue.svg)](https://github.com)
 [![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8?style=flat&logo=go)](https://golang.org)
 [![Wails v3](https://img.shields.io/badge/GUI-Wails%20v3-DF0000?style=flat)](https://v3.wails.io)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](https://github.com)
@@ -30,9 +30,9 @@ It sits between your applications and corporate authenticated proxies, seamlessl
 - **Upstream Proxy Types Supported**:
   - `DIRECT`: Bypass, direct connection with smart in-memory DNS caching.
   - `HTTP`: Upstream HTTP proxy with Basic, Digest, NTLM v1/v2, or Kerberos/SPNEGO authentication.
-  - `SOCKS5`: SOCKS version 5 with or without username/password.
+  - `SOCKS5`: SOCKS version 5 with optional RFC 1929 username/password authentication.
   - `SOCKS4`: SOCKS version 4 / 4a (domain name support).
-  - `PAC`: Proxy Auto-Configuration via JavaScript evaluator (Netscape & Microsoft IPv6 extensions).
+  - `PAC`: Proxy Auto-Configuration with automated blacklist timeout failover (`blacklistTimeout`) and dynamic multi-candidate failover, supporting NTLM/Kerberos/Basic upstream proxy authentication and one-click blacklist reset.
 - **Windows Integrated Authentication (SSO)**:
   - Uses native Windows SSPI (`secur32.dll`) via `alexbrainman/sspi`.
   - Pass corporate proxies without entering your domain password!

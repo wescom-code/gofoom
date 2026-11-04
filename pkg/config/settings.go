@@ -23,6 +23,7 @@ type AppConfig struct {
 	UseCurrentCredentials bool   `json:"useCurrentCredentials"`
 	HttpAuthProtocol      string `json:"httpAuthProtocol"`
 	PacFileLocation       string `json:"pacFileLocation"`
+	BlacklistTimeout      int    `json:"blacklistTimeout,omitempty"`
 	AutoStart             bool   `json:"autostart"`
 	StartMinimized        bool   `json:"startMinimized"`
 	AutoDetect            bool   `json:"autodetect"`
@@ -46,6 +47,7 @@ func DefaultAppConfig() AppConfig {
 		ProxyTestURL:          "https://example.com",
 		UseCurrentCredentials: true,
 		HttpAuthProtocol:      "NTLM",
+		BlacklistTimeout:      5,
 	}
 }
 
@@ -151,6 +153,7 @@ func (cm *ConfigManager) ToServerConfig() proxy.ServerConfig {
 		UseCurrentCredentials: c.UseCurrentCredentials,
 		HttpAuthProtocol:      c.HttpAuthProtocol,
 		PacFileLocation:       c.PacFileLocation,
+		BlacklistTimeout:      c.BlacklistTimeout,
 	}
 	return sc
 }

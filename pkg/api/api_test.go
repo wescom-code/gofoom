@@ -170,6 +170,20 @@ func TestApiServerEndpoints(t *testing.T) {
 	}
 	resp.Body.Close()
 
+	// 10b. Test /blacklist/clear
+	resp, err = http.Post(apiURL+"/blacklist/clear", "application/json", nil)
+	if err != nil {
+		t.Fatalf("Failed to POST /blacklist/clear: %v", err)
+	}
+	var clearResp map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&clearResp); err != nil {
+		t.Fatalf("Failed to decode /blacklist/clear JSON: %v", err)
+	}
+	resp.Body.Close()
+	if _, ok := clearResp["cleared"]; !ok {
+		t.Errorf("Expected cleared key in response")
+	}
+
 	// 11. Test /shutdown
 	resp, err = http.Post(apiURL+"/shutdown", "text/plain", nil)
 	if err != nil {
