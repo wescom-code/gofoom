@@ -20,68 +20,459 @@
       --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: var(--font); }
-    body { background: var(--bg); color: var(--text); padding: 20px; font-size: 14px; user-select: none; }
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      padding: 10px 14px;
+      font-size: 13px;
+      user-select: none;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
     
-    header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid var(--card-border); }
-    .brand { display: flex; align-items: center; gap: 10px; }
-    .brand h1 { font-size: 20px; font-weight: 700; color: #60a5fa; }
-    .brand span { font-size: 12px; color: var(--text-muted); background: #1e293b; padding: 2px 8px; border-radius: 12px; }
+    header {
+      flex-shrink: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .brand {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 1px;
+    }
+    .brand h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: #60a5fa;
+      line-height: 1.1;
+      margin: 0;
+      padding: 0;
+    }
+    .brand span {
+      font-size: 10.5px;
+      color: var(--text-muted);
+      background: transparent;
+      padding: 0;
+      line-height: 1.1;
+      letter-spacing: 0.2px;
+    }
     
-    .status-badge { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; padding: 6px 12px; border-radius: 20px; }
+    .status-badge { display: flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12px; padding: 4px 10px; border-radius: 20px; }
     .status-running { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
     .status-stopped { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
-    .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
     .status-running .dot { background: #10b981; box-shadow: 0 0 8px #10b981; }
     .status-stopped .dot { background: #94a3b8; }
 
-    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px; }
-    .stat-card { background: var(--card-bg); border: 1px solid var(--card-border); padding: 12px; border-radius: 8px; text-align: center; }
-    .stat-value { font-size: 18px; font-weight: 700; color: #f1f5f9; margin-top: 4px; }
-    .stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
+    /* Stats Grid */
+    .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 12px; }
+    .stat-card { background: var(--card-bg); border: 1px solid var(--card-border); padding: 8px 10px; border-radius: 6px; text-align: center; }
+    .stat-value { font-size: 15px; font-weight: 700; color: #f1f5f9; margin-top: 2px; }
+    .stat-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
 
-    .main-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
-    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 10px; padding: 18px; }
-    .card-title { font-size: 15px; font-weight: 600; margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
+    /* Cards & Form Components */
+    .card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 8px; padding: 13px 15px; }
+    .card-title { font-size: 14px; font-weight: 600; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
 
-    .form-group { margin-bottom: 14px; }
-    .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    label { display: block; font-size: 12px; color: var(--text-muted); margin-bottom: 6px; font-weight: 500; }
+    .form-group { margin-bottom: 8px; }
+    label { display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-weight: 500; }
     input[type="text"], input[type="password"], input[type="number"], select {
-      width: 100%; padding: 8px 12px; background: #0f172a; border: 1px solid var(--card-border);
-      border-radius: 6px; color: #fff; font-size: 13px; outline: none; transition: border-color 0.2s;
+      width: 100%; height: 32px; padding: 5px 9px; background: #0f172a; border: 1px solid var(--card-border);
+      border-radius: 5px; color: #fff; font-size: 12.5px; outline: none; transition: border-color 0.2s;
     }
     input:focus, select:focus { border-color: var(--primary); }
-    
-    .checkbox-group { display: flex; align-items: center; gap: 8px; margin-top: 6px; cursor: pointer; }
-    .checkbox-group input { width: 16px; height: 16px; accent-color: var(--primary); cursor: pointer; }
 
-    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; }
+    /* Compact Layout Helpers */
+    .compact-row {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .compact-checkbox {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      color: #cbd5e1;
+      cursor: pointer;
+      user-select: none;
+      padding: 0 9px;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 5px;
+      height: 32px;
+      white-space: nowrap;
+      transition: all 0.15s ease;
+    }
+    .compact-checkbox:hover {
+      border-color: var(--primary);
+      background: #172554;
+    }
+    .compact-checkbox input[type="checkbox"] {
+      width: 14px;
+      height: 14px;
+      accent-color: var(--primary);
+      margin: 0;
+      cursor: pointer;
+    }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 6px 14px; border-radius: 5px; font-size: 12px; font-weight: 600; cursor: pointer; border: none; transition: all 0.2s; height: 32px; }
     .btn-primary { background: var(--primary); color: #fff; }
     .btn-primary:hover { background: var(--primary-hover); }
     .btn-success { background: var(--success); color: #fff; }
     .btn-danger { background: var(--danger); color: #fff; }
     .btn-outline { background: transparent; border: 1px solid var(--card-border); color: #cbd5e1; }
     .btn-outline:hover { background: #334155; }
-    .btn-sm { padding: 4px 10px; font-size: 11px; }
+    .btn-sm { padding: 3px 9px; font-size: 11px; height: 26px; }
 
-    .actions { display: flex; justify-content: space-between; gap: 10px; margin-top: 15px; border-top: 1px solid var(--card-border); padding-top: 15px; }
+    .actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; border-top: 1px solid var(--card-border); padding-top: 10px; }
 
     /* Terminal logs */
     .log-container {
-      background: #090d16; border: 1px solid #1e293b; border-radius: 6px; height: 150px;
+      background: #090d16; border: 1px solid #1e293b; border-radius: 6px;
+      min-height: 180px;
       overflow-y: auto; padding: 8px; font-family: "Consolas", "Courier New", monospace; font-size: 11px;
       user-select: text;
       -webkit-user-select: text;
       cursor: text;
+      box-sizing: border-box;
     }
-    .log-line { margin-bottom: 3px; line-height: 1.4; word-break: break-all; user-select: text; -webkit-user-select: text; }
+    .log-line { margin-bottom: 3px; line-height: 1.35; word-break: break-all; user-select: text; -webkit-user-select: text; }
     .log-time { color: #64748b; }
     .log-info { color: #38bdf8; }
     .log-err { color: #f87171; }
     .log-200 { color: #4ade80; }
     .log-warn { color: #fbbf24; }
 
-    .toast { position: fixed; bottom: 20px; right: 20px; background: #1e293b; border: 1px solid #3b82f6; color: #fff; padding: 10px 16px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none; font-size: 13px; }
+    /* Sleek Scrollbar for Scrollable Panels */
+    #configSection::-webkit-scrollbar,
+    .log-container::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    #configSection::-webkit-scrollbar-track,
+    .log-container::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.6);
+      border-radius: 3px;
+    }
+    #configSection::-webkit-scrollbar-thumb,
+    .log-container::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    #configSection::-webkit-scrollbar-thumb:hover,
+    .log-container::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    /* Segmented Tab Control (Mode 2) */
+    .view-switcher {
+      display: flex;
+      background: #0f172a;
+      border: 1px solid var(--card-border);
+      border-radius: 6px;
+      padding: 3px;
+      gap: 4px;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+    .tab-btn {
+      flex: 1;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .tab-btn:hover {
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    .tab-btn.active {
+      color: #fff;
+      background: #1e293b;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+      border: 1px solid #334155;
+    }
+
+    /* ======================================================== */
+    /* Layout Modes: Split (1), Stacked (2), and Auto           */
+    /* ======================================================== */
+    #appContainer {
+      width: 100%;
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* Mode (1): Two-Column Split (Left: Config, Right: Stats & Logs) */
+    .layout-split {
+      display: grid !important;
+      grid-template-columns: minmax(360px, 1.15fr) minmax(310px, 0.85fr) !important;
+      grid-template-rows: auto 1fr !important;
+      grid-template-areas:
+        "config stats"
+        "config logs" !important;
+      gap: 12px;
+      align-items: stretch !important;
+      flex: 1;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+    .layout-split #configSection {
+      grid-area: config;
+      height: 100%;
+      max-height: 100%;
+      overflow-y: auto;
+      overflow-x: auto;
+      box-sizing: border-box;
+      display: flex !important;
+      flex-direction: column;
+    }
+    .layout-split #statsSection {
+      grid-area: stats;
+      align-self: start;
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+    .layout-split .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 6px;
+    }
+    .layout-split #logsSection {
+      grid-area: logs;
+      display: flex !important;
+      flex-direction: column !important;
+      min-height: 220px;
+      height: 100%;
+      overflow: hidden;
+    }
+    .layout-split #logsSection .card-title {
+      flex-shrink: 0;
+      margin-bottom: 8px;
+    }
+    .layout-split #logsSection .log-container {
+      flex: 1;
+      min-height: 180px;
+      height: 100%;
+    }
+    .layout-split #viewSwitcher {
+      display: none !important;
+    }
+
+    /* Mode (2): Single-Column Stacked (Top: Stats, Tab: Config OR Logs) */
+    .layout-stacked {
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 8px;
+      flex: 1;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+    .layout-stacked #statsSection {
+      order: 1;
+      margin-bottom: 0;
+      flex-shrink: 0;
+    }
+    .layout-stacked .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+    }
+    .layout-stacked #viewSwitcher {
+      order: 2;
+      display: flex !important;
+      flex-shrink: 0;
+    }
+    .layout-stacked #configSection {
+      order: 3;
+    }
+    .layout-stacked #logsSection {
+      order: 4;
+    }
+    .layout-stacked[data-active-tab="config"] #configSection {
+      display: flex !important;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      max-height: 100%;
+      overflow-y: auto;
+      overflow-x: auto;
+      box-sizing: border-box;
+    }
+    .layout-stacked[data-active-tab="config"] #logsSection {
+      display: none !important;
+    }
+    .layout-stacked[data-active-tab="logs"] #configSection {
+      display: none !important;
+    }
+    .layout-stacked[data-active-tab="logs"] #logsSection {
+      display: flex !important;
+      flex-direction: column !important;
+      flex: 1;
+      min-height: 250px;
+      height: 100%;
+      overflow: hidden;
+    }
+    .layout-stacked[data-active-tab="logs"] #logsSection .card-title {
+      flex-shrink: 0;
+      margin-bottom: 8px;
+    }
+    .layout-stacked[data-active-tab="logs"] #logsSection .log-container {
+      flex: 1;
+      min-height: 200px;
+      height: 100%;
+    }
+
+    /* Mode Auto: Responsive at 760px */
+    @media (min-width: 760px) {
+      .layout-auto {
+        display: grid !important;
+        grid-template-columns: minmax(360px, 1.15fr) minmax(310px, 0.85fr) !important;
+        grid-template-rows: auto 1fr !important;
+        grid-template-areas:
+          "config stats"
+          "config logs" !important;
+        gap: 12px;
+        align-items: stretch !important;
+        flex: 1;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      .layout-auto #configSection {
+        grid-area: config;
+        height: 100%;
+        max-height: 100%;
+        overflow-y: auto;
+        overflow-x: auto;
+        box-sizing: border-box;
+        display: flex !important;
+        flex-direction: column;
+      }
+      .layout-auto #statsSection {
+        grid-area: stats;
+        align-self: start;
+        margin-bottom: 0;
+        flex-shrink: 0;
+      }
+      .layout-auto .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 6px;
+      }
+      .layout-auto #logsSection {
+        grid-area: logs;
+        display: flex !important;
+        flex-direction: column !important;
+        min-height: 220px;
+        height: 100%;
+        overflow: hidden;
+      }
+      .layout-auto #logsSection .card-title {
+        flex-shrink: 0;
+        margin-bottom: 8px;
+      }
+      .layout-auto #logsSection .log-container {
+        flex: 1;
+        min-height: 180px;
+        height: 100%;
+      }
+      .layout-auto #viewSwitcher {
+        display: none !important;
+      }
+    }
+
+    @media (max-width: 759px) {
+      .layout-auto {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 8px;
+        flex: 1;
+        min-height: 0;
+        height: 100%;
+        overflow: hidden;
+      }
+      .layout-auto #statsSection {
+        order: 1;
+        margin-bottom: 0;
+        flex-shrink: 0;
+      }
+      .layout-auto .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+      .layout-auto #viewSwitcher {
+        order: 2;
+        display: flex !important;
+        flex-shrink: 0;
+      }
+      .layout-auto #configSection {
+        order: 3;
+      }
+      .layout-auto #logsSection {
+        order: 4;
+      }
+      .layout-auto[data-active-tab="config"] #configSection {
+        display: flex !important;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+        max-height: 100%;
+        overflow-y: auto;
+        overflow-x: auto;
+        box-sizing: border-box;
+      }
+      .layout-auto[data-active-tab="config"] #logsSection {
+        display: none !important;
+      }
+      .layout-auto[data-active-tab="logs"] #configSection {
+        display: none !important;
+      }
+      .layout-auto[data-active-tab="logs"] #logsSection {
+        display: flex !important;
+        flex-direction: column !important;
+        flex: 1;
+        min-height: 250px;
+        height: 100%;
+        overflow: hidden;
+      }
+      .layout-auto[data-active-tab="logs"] #logsSection .card-title {
+        flex-shrink: 0;
+        margin-bottom: 8px;
+      }
+      .layout-auto[data-active-tab="logs"] #logsSection .log-container {
+        flex: 1;
+        min-height: 200px;
+        height: 100%;
+      }
+    }
+
+    .toast { position: fixed; bottom: 18px; right: 18px; background: #1e293b; border: 1px solid #3b82f6; color: #fff; padding: 8px 14px; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); display: none; font-size: 12px; z-index: 1000; }
 
     /* Preferences Modal Dialog */
     .modal-overlay {
@@ -104,10 +495,10 @@
     .modal-dialog {
       background: var(--card-bg);
       border: 1px solid var(--card-border);
-      border-radius: 12px;
+      border-radius: 10px;
       width: 90%;
       max-width: 480px;
-      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
       transform: translateY(-15px) scale(0.98);
       transition: transform 0.2s ease;
       overflow: hidden;
@@ -116,14 +507,14 @@
       transform: translateY(0) scale(1);
     }
     .modal-header {
-      padding: 16px 20px;
+      padding: 14px 18px;
       border-bottom: 1px solid var(--card-border);
       display: flex;
       justify-content: space-between;
       align-items: center;
     }
     .modal-title {
-      font-size: 15px;
+      font-size: 14px;
       font-weight: 600;
       color: #f1f5f9;
       display: flex;
@@ -134,7 +525,7 @@
       background: transparent;
       border: none;
       color: var(--text-muted);
-      font-size: 22px;
+      font-size: 20px;
       cursor: pointer;
       padding: 0 4px;
       line-height: 1;
@@ -145,17 +536,19 @@
       background: rgba(255, 255, 255, 0.1);
     }
     .modal-body {
-      padding: 20px;
+      padding: 16px 18px;
       display: flex;
       flex-direction: column;
-      gap: 12px;
+      gap: 10px;
+      max-height: 80vh;
+      overflow-y: auto;
     }
     .pref-option {
       display: flex;
       align-items: flex-start;
-      gap: 12px;
-      padding: 12px 14px;
-      border-radius: 8px;
+      gap: 10px;
+      padding: 9px 12px;
+      border-radius: 6px;
       background: #0f172a;
       border: 1px solid var(--card-border);
       cursor: pointer;
@@ -165,9 +558,9 @@
       border-color: var(--primary);
       background: #131d33;
     }
-    .pref-option input[type="checkbox"] {
-      width: 18px;
-      height: 18px;
+    .pref-option input[type="checkbox"], .pref-option input[type="radio"] {
+      width: 16px;
+      height: 16px;
       margin-top: 2px;
       accent-color: var(--primary);
       cursor: pointer;
@@ -178,22 +571,22 @@
       flex-direction: column;
     }
     .pref-label {
-      font-size: 13px;
+      font-size: 12.5px;
       font-weight: 600;
       color: #f8fafc;
     }
     .pref-desc {
       font-size: 11px;
       color: var(--text-muted);
-      margin-top: 3px;
-      line-height: 1.4;
+      margin-top: 2px;
+      line-height: 1.35;
     }
     .modal-footer {
-      padding: 14px 20px;
+      padding: 12px 18px;
       border-top: 1px solid var(--card-border);
       display: flex;
       justify-content: flex-end;
-      gap: 10px;
+      gap: 8px;
       background: rgba(15, 23, 42, 0.4);
     }
   </style>
@@ -203,74 +596,95 @@
   <header>
     <div class="brand">
       <h1>Gofoom</h1>
-      <span id="brandSubtitle">v1.2.0</span>
+      <span id="brandSubtitle"></span>
     </div>
-    <div style="display: flex; gap: 10px; align-items: center;">
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <!-- Quick Layout Mode Toggle -->
+      <button id="btnQuickLayout" class="btn btn-outline btn-sm" title="Toggle Layout Mode: Auto / Split (Two-Column) / Stacked (Single-Column)" onclick="cycleLayoutMode()">
+        <span id="quickLayoutIcon">⚡</span> <span id="quickLayoutText">Auto</span>
+      </button>
       <button class="btn btn-outline btn-sm" onclick="openPrefModal()">⚙ Preferences</button>
       <div id="statusBadge" class="status-badge status-stopped">
         <span class="dot"></span>
         <span id="statusText">STOPPED</span>
       </div>
-      <button id="btnToggleServer" class="btn btn-success" onclick="toggleServer()">Start Server</button>
+      <button id="btnToggleServer" class="btn btn-success btn-sm" onclick="toggleServer()">Start Server</button>
     </div>
   </header>
 
-  <div class="stats-grid">
-    <div class="stat-card">
-      <div class="stat-label">Active Conns</div>
-      <div class="stat-value" id="statActive">0</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Total Requests</div>
-      <div class="stat-value" id="statRequests">0</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Bytes In</div>
-      <div class="stat-value" id="statIn">0 KB</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Bytes Out</div>
-      <div class="stat-value" id="statOut">0 KB</div>
-    </div>
-  </div>
+  <!-- App Layout Container -->
+  <div id="appContainer" class="layout-auto" data-active-tab="config">
 
-  <div class="main-grid">
-    <div class="card">
+    <!-- Stats Section (Dashboard) -->
+    <div id="statsSection" class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Active Conns</div>
+        <div class="stat-value" id="statActive">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Requests</div>
+        <div class="stat-value" id="statRequests">0</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Bytes In</div>
+        <div class="stat-value" id="statIn">0 KB</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Bytes Out</div>
+        <div class="stat-value" id="statOut">0 KB</div>
+      </div>
+    </div>
+
+    <!-- Segmented Tab Switcher (Visible in Mode 2 / Stacked) -->
+    <div id="viewSwitcher" class="view-switcher">
+      <button id="tabBtnConfig" class="tab-btn active" onclick="switchTab('config')">
+        ⚙️ Proxy Configuration
+      </button>
+      <button id="tabBtnLogs" class="tab-btn" onclick="switchTab('logs')">
+        📋 Live Traffic Logs
+      </button>
+    </div>
+
+    <!-- Proxy Configuration Section -->
+    <div id="configSection" class="card">
       <div class="card-title">
         <span>Proxy Configuration</span>
         <button class="btn btn-outline btn-sm" onclick="autoDetect()">Auto-Detect System</button>
       </div>
 
-      <div class="form-row">
-        <div class="form-group">
+      <!-- Compact Row: Upstream Proxy Type + Local Port + Allow LAN -->
+      <div class="compact-row">
+        <div class="form-group" style="flex: 2; min-width: 120px;">
           <label>Upstream Proxy Type</label>
           <select id="proxyType" onchange="onProxyTypeChange()">
-            <option value="DIRECT">DIRECT (No upstream proxy)</option>
-            <option value="HTTP">HTTP (NTLM / Kerberos / Basic)</option>
+            <option value="DIRECT">DIRECT (No upstream)</option>
+            <option value="HTTP">HTTP (NTLM / Basic)</option>
             <option value="SOCKS5">SOCKS 5</option>
             <option value="SOCKS4">SOCKS 4 / 4a</option>
             <option value="PAC">PAC (Proxy Auto-Config)</option>
           </select>
         </div>
-        <div class="form-group">
-          <label>Local Proxy Port</label>
-          <input type="number" id="localPort" value="3129">
-          <label class="checkbox-group" style="margin-top: 6px;">
+        <div class="form-group" style="width: 82px; flex-shrink: 0;">
+          <label>Local Port</label>
+          <input type="number" id="localPort" value="3129" min="1" max="65535">
+        </div>
+        <div class="form-group" style="display: flex; flex-direction: column; justify-content: flex-end;">
+          <label class="compact-checkbox" title="Listen on 0.0.0.0 to allow LAN devices to access this proxy">
             <input type="checkbox" id="allowLan">
-            <span style="font-size: 11px;">Allow LAN connections (0.0.0.0)</span>
+            <span>Allow LAN</span>
           </label>
         </div>
       </div>
 
       <!-- Host & Port for HTTP/SOCKS -->
-      <div id="hostPortSection" class="form-row">
-        <div class="form-group">
-          <label>Upstream Host</label>
+      <div id="hostPortSection" class="compact-row">
+        <div class="form-group" style="flex: 1;">
+          <label>Upstream Host / IP</label>
           <input type="text" id="proxyHost" placeholder="proxy.corp.local or IP">
         </div>
-        <div class="form-group">
-          <label>Upstream Port</label>
-          <input type="number" id="proxyPort" placeholder="8080">
+        <div class="form-group" style="width: 82px; flex-shrink: 0;">
+          <label>Port</label>
+          <input type="number" id="proxyPort" placeholder="8080" min="1" max="65535">
         </div>
       </div>
 
@@ -280,64 +694,68 @@
           <label>PAC File Location or URL</label>
           <input type="text" id="pacLocation" placeholder="http://wpad/wpad.dat or C:\proxy.pac">
         </div>
-        <div class="form-row" style="margin-top: 10px; align-items: flex-end;">
-          <div class="form-group">
-            <label>Blacklist Timeout (mins)</label>
-            <input type="number" id="blacklistTimeout" value="5" min="1" max="1440">
+        <div class="compact-row" style="align-items: flex-end; margin-bottom: 8px;">
+          <div class="form-group" style="flex: 1;">
+            <label>Blacklist Timeout</label>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <input type="number" id="blacklistTimeout" value="5" min="1" max="1440" style="width: 68px;">
+              <span style="font-size: 11px; color: var(--text-muted);">minutes</span>
+            </div>
           </div>
-          <div class="form-group" style="display: flex; align-items: flex-end;">
-            <button class="btn btn-outline" style="width: 100%; white-space: nowrap;" onclick="clearBlacklist()">Clear Blacklist</button>
+          <div class="form-group">
+            <button class="btn btn-outline btn-sm" style="height: 32px; white-space: nowrap;" onclick="clearBlacklist()">Clear Blacklist</button>
           </div>
         </div>
       </div>
 
       <!-- Authentication -->
       <div id="authSection">
-        <div id="sspiSection" class="form-group">
-          <label class="checkbox-group">
-            <input type="checkbox" id="useCurrentCreds" onchange="onUseCurrentCredsChange()">
-            <span>Use Current Windows User Credentials (SSPI / NTLM / Kerberos SSO)</span>
-          </label>
+        <div class="compact-row" style="align-items: center; margin-bottom: 8px;">
+          <div id="sspiSection" style="flex: 1;">
+            <label class="compact-checkbox" style="width: 100%;" title="Authenticate with logged-in Windows account (SSPI / NTLM / Kerberos SSO)">
+              <input type="checkbox" id="useCurrentCreds" onchange="onUseCurrentCredsChange()">
+              <span>Windows SSO (SSPI)</span>
+            </label>
+          </div>
+          <div id="authProtocolSection" style="width: 120px; flex-shrink: 0;">
+            <select id="httpAuthProtocol" title="Authentication Protocol">
+              <option value="AUTO">Auth: Auto</option>
+              <option value="NTLM">Auth: NTLM</option>
+              <option value="KERBEROS">Auth: Kerberos</option>
+              <option value="BASIC">Auth: Basic</option>
+            </select>
+          </div>
         </div>
 
-        <div id="authProtocolSection" class="form-group">
-          <label>Authentication Protocol</label>
-          <select id="httpAuthProtocol">
-            <option value="NTLM">NTLM</option>
-            <option value="KERBEROS">Kerberos / Negotiate</option>
-            <option value="BASIC">Basic</option>
-            <option value="AUTO">Auto Detect</option>
-          </select>
-        </div>
-
-        <div id="manualCredsSection" class="form-row">
-          <div class="form-group">
-            <label>Username (or DOMAIN\user)</label>
+        <div id="manualCredsSection" class="compact-row">
+          <div class="form-group" style="flex: 1;">
+            <label>Username (DOMAIN\user)</label>
             <input type="text" id="proxyUser" placeholder="username">
           </div>
-          <div class="form-group">
+          <div class="form-group" style="flex: 1;">
             <label>Password</label>
             <input type="password" id="proxyPass" placeholder="password">
           </div>
         </div>
       </div>
 
+      <!-- Test URL -->
       <div class="form-group">
-        <label>Test URL</label>
+        <label>Connectivity Test URL</label>
         <div style="display: flex; gap: 8px;">
           <input type="text" id="testUrl" value="https://example.com" style="flex: 1;">
-          <button class="btn btn-outline" style="white-space: nowrap;" onclick="testConnection()">Test Connection</button>
+          <button class="btn btn-outline btn-sm" style="white-space: nowrap; height: 32px;" onclick="testConnection()">Test Connection</button>
         </div>
       </div>
 
       <div class="actions">
-        <button class="btn btn-outline" onclick="loadConfig()">Reset</button>
-        <button class="btn btn-primary" onclick="saveConfig()">Save Settings</button>
+        <button class="btn btn-outline btn-sm" onclick="loadConfig()">Reset</button>
+        <button class="btn btn-primary btn-sm" onclick="saveConfig()">Save Settings</button>
       </div>
     </div>
 
-    <!-- Live Logs -->
-    <div class="card">
+    <!-- Live Logs Section -->
+    <div id="logsSection" class="card">
       <div class="card-title">
         <span>Live Traffic Logs</span>
         <button class="btn btn-outline btn-sm" onclick="clearLogs()">Clear</button>
@@ -356,6 +774,36 @@
         <button class="modal-close" onclick="closePrefModal()">&times;</button>
       </div>
       <div class="modal-body">
+        <div style="font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;">
+          UI Layout Mode
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label class="pref-option">
+            <input type="radio" name="uiLayoutMode" value="auto" onchange="applyLayoutMode('auto')">
+            <div class="pref-info">
+              <span class="pref-label">⚡ Auto (Responsive)</span>
+              <span class="pref-desc">Automatically switch: Two-Column Split (≥760px) or Single-Column Stacked (<760px).</span>
+            </div>
+          </label>
+          <label class="pref-option">
+            <input type="radio" name="uiLayoutMode" value="split" onchange="applyLayoutMode('split')">
+            <div class="pref-info">
+              <span class="pref-label">🖥️ Two-Column Split (Mode 1)</span>
+              <span class="pref-desc">Always show Config on the left, Stats and Logs on the right.</span>
+            </div>
+          </label>
+          <label class="pref-option">
+            <input type="radio" name="uiLayoutMode" value="stacked" onchange="applyLayoutMode('stacked')">
+            <div class="pref-info">
+              <span class="pref-label">📱 Single-Column Stacked (Mode 2)</span>
+              <span class="pref-desc">Stats on top, with a toggle button between Config and Logs.</span>
+            </div>
+          </label>
+        </div>
+
+        <div style="font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 8px;">
+          System Preferences
+        </div>
         <label class="pref-option">
           <input type="checkbox" id="autoStartProxy">
           <div class="pref-info">
@@ -379,8 +827,8 @@
         </label>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-outline" onclick="closePrefModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="savePrefAndClose()">Save Preferences</button>
+        <button class="btn btn-outline btn-sm" onclick="closePrefModal()">Close</button>
+        <button class="btn btn-primary btn-sm" onclick="savePrefAndClose()">Save Preferences</button>
       </div>
     </div>
   </div>
@@ -393,6 +841,77 @@
     const API_BASE = "http://127.0.0.1:" + apiPort;
     let isRunning = false;
 
+    // Layout Mode Management
+    let currentLayoutMode = localStorage.getItem("gofoom_ui_layout_mode") || "auto";
+    let currentTab = localStorage.getItem("gofoom_active_tab") || "config";
+
+    function applyLayoutMode(mode) {
+      currentLayoutMode = mode;
+      localStorage.setItem("gofoom_ui_layout_mode", mode);
+
+      const container = document.getElementById("appContainer");
+      if (!container) return;
+      container.classList.remove("layout-auto", "layout-split", "layout-stacked");
+      container.classList.add("layout-" + mode);
+
+      // Update quick button
+      const icon = document.getElementById("quickLayoutIcon");
+      const text = document.getElementById("quickLayoutText");
+      if (icon && text) {
+        if (mode === "auto") {
+          icon.textContent = "⚡";
+          text.textContent = "Auto";
+        } else if (mode === "split") {
+          icon.textContent = "🖥️";
+          text.textContent = "雙欄";
+        } else {
+          icon.textContent = "📱";
+          text.textContent = "單欄";
+        }
+      }
+
+      // Update radio in pref modal
+      const radios = document.getElementsByName("uiLayoutMode");
+      for (const r of radios) {
+        r.checked = (r.value === mode);
+      }
+
+      updateTabVisibility();
+    }
+
+    function cycleLayoutMode() {
+      if (currentLayoutMode === "auto") applyLayoutMode("split");
+      else if (currentLayoutMode === "split") applyLayoutMode("stacked");
+      else applyLayoutMode("auto");
+      showToast("Layout: " + (currentLayoutMode === "auto" ? "Auto (Responsive)" : (currentLayoutMode === "split" ? "Two-Column Split" : "Single-Column Stacked")));
+    }
+
+    function switchTab(tab) {
+      currentTab = tab;
+      localStorage.setItem("gofoom_active_tab", tab);
+      updateTabVisibility();
+    }
+
+    function updateTabVisibility() {
+      const tabConfig = document.getElementById("tabBtnConfig");
+      const tabLogs = document.getElementById("tabBtnLogs");
+
+      if (tabConfig && tabLogs) {
+        if (currentTab === "config") {
+          tabConfig.classList.add("active");
+          tabLogs.classList.remove("active");
+        } else {
+          tabConfig.classList.remove("active");
+          tabLogs.classList.add("active");
+        }
+      }
+
+      const container = document.getElementById("appContainer");
+      if (container) {
+        container.setAttribute("data-active-tab", currentTab);
+      }
+    }
+
     function showToast(msg) {
       const t = document.getElementById("toast");
       t.innerText = msg;
@@ -401,6 +920,11 @@
     }
 
     function openPrefModal() {
+      // Sync layout radio with current setting
+      const radios = document.getElementsByName("uiLayoutMode");
+      for (const r of radios) {
+        r.checked = (r.value === currentLayoutMode);
+      }
       document.getElementById("prefModal").classList.add("active");
     }
 
@@ -460,13 +984,13 @@
 
     function onProxyTypeChange() {
       const t = document.getElementById("proxyType").value;
-      document.getElementById("hostPortSection").style.display = (t === "HTTP" || t === "SOCKS5" || t === "SOCKS4") ? "grid" : "none";
-      document.getElementById("pacSection").style.display = (t === "PAC") ? "block" : "none";
-      document.getElementById("authSection").style.display = (t === "HTTP" || t === "PAC" || t === "SOCKS5") ? "block" : "none";
+      document.getElementById("hostPortSection").style.display = (t === "HTTP" || t === "SOCKS5" || t === "SOCKS4") ? "" : "none";
+      document.getElementById("pacSection").style.display = (t === "PAC") ? "" : "none";
+      document.getElementById("authSection").style.display = (t === "HTTP" || t === "PAC" || t === "SOCKS5") ? "" : "none";
 
       const isHttpOrPac = (t === "HTTP" || t === "PAC");
-      document.getElementById("sspiSection").style.display = isHttpOrPac ? "block" : "none";
-      document.getElementById("authProtocolSection").style.display = isHttpOrPac ? "block" : "none";
+      document.getElementById("sspiSection").style.display = isHttpOrPac ? "" : "none";
+      document.getElementById("authProtocolSection").style.display = isHttpOrPac ? "" : "none";
 
       onUseCurrentCredsChange();
     }
@@ -559,12 +1083,12 @@
           if (running) {
             badge.className = "status-badge status-running";
             document.getElementById("statusText").innerText = "RUNNING";
-            btn.className = "btn btn-danger";
+            btn.className = "btn btn-danger btn-sm";
             btn.innerText = "Stop Server";
           } else {
             badge.className = "status-badge status-stopped";
             document.getElementById("statusText").innerText = "STOPPED";
-            btn.className = "btn btn-success";
+            btn.className = "btn btn-success btn-sm";
             btn.innerText = "Start Server";
           }
         }
@@ -579,91 +1103,100 @@
         showToast(txt.trim());
         setTimeout(updateStatus, 150);
       } catch (e) {
-        showToast("Action failed: " + e.message);
-      }
-    }
-
-    async function autoDetect() {
-      try {
-        const res = await fetch(API_BASE + "/autodetect");
-        const txt = await res.text();
-        showToast(txt.trim());
-        await loadConfig();
-      } catch (e) {
-        showToast("Auto-detect failed: " + e.message);
-      }
-    }
-
-    async function testConnection() {
-      const rawUrl = document.getElementById("testUrl").value.trim();
-      if (!rawUrl) {
-        showToast("Please enter a test URL");
-        return;
-      }
-      showToast("Testing connection to " + rawUrl + "...");
-      try {
-        const res = await fetch(API_BASE + "/validate?url=" + encodeURIComponent(rawUrl));
-        const txt = await res.text();
-        showToast(txt.trim());
-        addLog(new Date().toLocaleTimeString(), res.ok ? "INFO" : "WARN", "[Validation] " + txt.trim());
-      } catch (e) {
-        showToast("Validation request failed: " + e.message);
+        showToast("Server toggle error: " + e.message);
       }
     }
 
     function formatBytes(bytes) {
-      if (!bytes || bytes <= 0) return "0 B";
-      if (bytes < 1024) return bytes + " B";
-      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
-      if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(2) + " MB";
-      return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+      if (bytes === 0) return "0 B";
+      const k = 1024;
+      const sizes = ["B", "KB", "MB", "GB", "TB"];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
 
-    function renderStats(stats) {
-      if (!stats) return;
-      const s = (stats.data !== undefined) ? stats.data : stats;
-      document.getElementById("statActive").innerText = s.activeConnections || 0;
-      document.getElementById("statRequests").innerText = s.totalRequests || 0;
-      document.getElementById("statIn").innerText = formatBytes(s.bytesReceived);
-      document.getElementById("statOut").innerText = formatBytes(s.bytesSent);
+    function renderStats(st) {
+      if (!st) return;
+      document.getElementById("statActive").innerText = st.activeConnections ?? 0;
+      document.getElementById("statRequests").innerText = st.totalRequests ?? 0;
+      document.getElementById("statIn").innerText = formatBytes(st.bytesReceived ?? 0);
+      document.getElementById("statOut").innerText = formatBytes(st.bytesSent ?? 0);
     }
 
     async function updateStats() {
       try {
         const res = await fetch(API_BASE + "/stats");
         if (res.ok) {
-          const stats = await res.json();
-          renderStats(stats);
+          const st = await res.json();
+          renderStats(st);
         }
       } catch (e) {}
     }
 
-    let lastLogTs = 0;
     async function updateLogs() {
       try {
         const res = await fetch(API_BASE + "/logs");
         if (res.ok) {
           const logs = await res.json();
           if (Array.isArray(logs) && logs.length > 0) {
-            let maxTs = lastLogTs;
-            for (let i = 0; i < logs.length; i++) {
-              const ev = logs[i];
-              const evTime = new Date(ev.timestamp).getTime();
-              if (evTime > lastLogTs) {
-                const time = new Date(ev.timestamp).toLocaleTimeString();
-                let target = ev.target || "";
-                let method = ev.method || "";
-                let status = ev.status || "";
-                let msg = ev.message || "";
-                let logText = method ? `${method} ${target} -> ${status} (${msg})` : msg;
-                addLog(time, ev.level || "INFO", logText);
-                if (evTime > maxTs) maxTs = evTime;
-              }
-            }
-            lastLogTs = maxTs;
+            const box = document.getElementById("logBox");
+            box.innerHTML = "";
+            logs.forEach(item => {
+              const line = document.createElement("div");
+              line.className = "log-line";
+              let lvlClass = "log-info";
+              if (item.level === "ERROR") lvlClass = "log-err";
+              if (item.level === "WARN") lvlClass = "log-warn";
+              const time = new Date(item.timestamp).toLocaleTimeString();
+              let target = item.target || "";
+              let method = item.method || "";
+              let status = item.status || "";
+              let msg = item.message || "";
+              let logText = method ? `${method} ${target} -> ${status} (${msg})` : msg;
+              line.innerHTML = `<span class="log-time">[${time}]</span> <span class="${lvlClass}">[${item.level || "INFO"}]</span> ${logText}`;
+              box.appendChild(line);
+            });
+            box.scrollTop = box.scrollHeight;
           }
         }
       } catch (e) {}
+    }
+
+    async function autoDetect() {
+      try {
+        const res = await fetch(API_BASE + "/autodetect");
+        if (res.ok) {
+          const detected = await res.json();
+          if (detected.detected) {
+            document.getElementById("proxyType").value = detected.type;
+            if (detected.type === "PAC") {
+              document.getElementById("pacLocation").value = detected.pacUrl;
+            } else if (detected.type === "HTTP") {
+              const u = new URL("http://" + detected.host);
+              document.getElementById("proxyHost").value = u.hostname;
+              document.getElementById("proxyPort").value = u.port || 8080;
+            }
+            onProxyTypeChange();
+            showToast("System proxy settings auto-detected!");
+          } else {
+            showToast("No system proxy detected (Direct connection)");
+          }
+        }
+      } catch (e) {
+        showToast("Auto-detection failed: " + e.message);
+      }
+    }
+
+    async function testConnection() {
+      const targetUrl = document.getElementById("testUrl").value;
+      try {
+        showToast("Validating proxy route...");
+        const res = await fetch(API_BASE + "/validate?url=" + encodeURIComponent(targetUrl));
+        const txt = await res.text();
+        showToast(txt.trim());
+      } catch (e) {
+        showToast("Connection test failed: " + e.message);
+      }
     }
 
     let statusTimer = null;
@@ -671,9 +1204,9 @@
     let logsTimer = null;
 
     function startTimers() {
-      if (!statusTimer) statusTimer = setInterval(updateStatus, 3000);
+      if (!statusTimer) statusTimer = setInterval(updateStatus, 1000);
       if (!statsTimer) statsTimer = setInterval(updateStats, 1000);
-      if (!logsTimer) logsTimer = setInterval(updateLogs, 1500);
+      if (!logsTimer) logsTimer = setInterval(updateLogs, 1000);
     }
 
     function stopTimers() {
@@ -684,13 +1217,25 @@
 
     // Connect to Wails event bus if available, or poll
     window.addEventListener("DOMContentLoaded", () => {
-      const appVer = window.GOFOOM_VERSION || "1.2.0";
-      document.getElementById("brandSubtitle").textContent = "v" + appVer + " (API :" + apiPort + ")";
+      // Initialize Layout Mode & Tab
+      applyLayoutMode(currentLayoutMode);
+      switchTab(currentTab);
+
+      function renderBrandVersion(ver) {
+        if (!ver) return;
+        document.getElementById("brandSubtitle").textContent = "v" + ver + " (API :" + apiPort + ")";
+      }
+
+      // Read dynamic version injected by Go runtime into window.GOFOOM_VERSION
+      if (window.GOFOOM_VERSION) {
+        renderBrandVersion(window.GOFOOM_VERSION);
+      }
+      // Dynamic fallback query to /version for external browser access
       fetch(API_BASE + "/version")
         .then(r => r.json())
         .then(data => {
           if (data && data.version) {
-            document.getElementById("brandSubtitle").textContent = "v" + data.version + " (API :" + apiPort + ")";
+            renderBrandVersion(data.version);
           }
         })
         .catch(() => {});

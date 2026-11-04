@@ -95,8 +95,8 @@ func (u *AppUI) Run(startMinimized bool) error {
 	// Create Webview Window
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
 		Title:         initialTitle,
-		Width:         620,
-		Height:        780,
+		Width:         780,
+		Height:        680,
 		Hidden:        startMinimized,
 		DisableResize: false,
 		URL:           fmt.Sprintf("/?apiPort=%d", apiPort),

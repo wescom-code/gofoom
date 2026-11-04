@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 
 	"gofoom/pkg/config"
 	"gofoom/pkg/proxy"
+	"gofoom/pkg/version"
 )
 
 func TestApiServerEndpoints(t *testing.T) {
@@ -205,11 +207,11 @@ func TestApiServerEndpoints(t *testing.T) {
 		t.Fatalf("Failed to decode /version JSON: %v", err)
 	}
 	resp.Body.Close()
-	if verInfo["version"] != "1.2.0" {
-		t.Errorf("Expected version 1.2.0, got %v", verInfo["version"])
+	if verInfo["version"] != version.Version {
+		t.Errorf("Expected version %s, got %v", version.Version, verInfo["version"])
 	}
-	if verInfo["name"] != "Gofoom" {
-		t.Errorf("Expected name Gofoom, got %v", verInfo["name"])
+	if verInfo["name"] != version.Name {
+		t.Errorf("Expected name %s, got %v", version.Name, verInfo["name"])
 	}
 
 	// 10e. Test HTML dashboard contains dynamic version
@@ -219,8 +221,9 @@ func TestApiServerEndpoints(t *testing.T) {
 	}
 	body, _ = io.ReadAll(resp.Body)
 	resp.Body.Close()
-	if !strings.Contains(string(body), "(v1.2.0)") {
-		t.Errorf("Expected HTML dashboard to contain (v1.2.0), got: %s", string(body))
+	expectedVerTag := fmt.Sprintf("(v%s)", version.Version)
+	if !strings.Contains(string(body), expectedVerTag) {
+		t.Errorf("Expected HTML dashboard to contain %s, got: %s", expectedVerTag, string(body))
 	}
 
 	// 11. Test /shutdown
