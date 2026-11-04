@@ -62,9 +62,14 @@ func (s *Server) Start() error {
 	var err error
 	actualPort := s.port
 
+	bindHost := "127.0.0.1"
+	if s.configMgr != nil && s.configMgr.Get().AllowLan {
+		bindHost = "0.0.0.0"
+	}
+
 	// Try requested port; if occupied, search for next available port (up to +20)
 	for i := 0; i < 20; i++ {
-		addr := fmt.Sprintf("127.0.0.1:%d", actualPort)
+		addr := fmt.Sprintf("%s:%d", bindHost, actualPort)
 		listener, err = net.Listen("tcp", addr)
 		if err == nil {
 			break
@@ -73,12 +78,13 @@ func (s *Server) Start() error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("api: failed to listen on 127.0.0.1:%d-%d: %w", s.port, actualPort-1, err)
+		return fmt.Errorf("api: failed to listen on %s:%d-%d: %w", bindHost, s.port, actualPort-1, err)
 	}
 
 	s.port = actualPort
 
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/status", s.handleStatus)
 	mux.HandleFunc("/stats", s.handleStats)
 	mux.HandleFunc("/logs", s.handleLogs)
@@ -131,6 +137,12 @@ func (s *Server) Stop() error {
 	err := s.httpServer.Shutdown(ctx)
 	s.isRunning = false
 	return err
+}
+
+// Rebind restarts the API server to apply updated network listening bindings.
+func (s *Server) Rebind() error {
+	_ = s.Stop()
+	return s.Start()
 }
 
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
@@ -197,10 +209,8 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if s.proxyServer.IsRunning() && newCfg.LocalPort != cur.LocalPort {
-			_, _ = fmt.Fprintln(w, "The local proxy server is up, you need to stop it before changing local port")
-			return
-		}
+		lanChanged := newCfg.AllowLan != cur.AllowLan
+		portChanged := newCfg.LocalPort != cur.LocalPort
 
 		if err := s.configMgr.Update(newCfg); err != nil {
 			http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
@@ -209,7 +219,17 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		if s.proxyServer.IsRunning() {
 			sc := s.configMgr.ToServerConfig()
-			s.proxyServer.UpdateConfig(sc)
+			if lanChanged || portChanged {
+				_ = s.proxyServer.Restart(sc)
+			} else {
+				s.proxyServer.UpdateConfig(sc)
+			}
+		}
+
+		if lanChanged {
+			time.AfterFunc(150*time.Millisecond, func() {
+				_ = s.Rebind()
+			})
 		}
 
 		_, _ = fmt.Fprintln(w, "Proxy configuration changed")
@@ -342,4 +362,76 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	logs := s.proxyServer.GetRecentLogs()
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(logs)
+}
+
+func (s *Server) handleRoot(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	statusStr := "STOPPED"
+	if s.proxyServer.IsRunning() {
+		statusStr = "RUNNING"
+	}
+	cfg := s.configMgr.Get()
+	stats := s.proxyServer.GetStats()
+	listenDesc := "127.0.0.1 (Local Only)"
+	if cfg.AllowLan {
+		listenDesc = "0.0.0.0 (LAN Accessible)"
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gofoom Management API</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 40px 20px; display: flex; justify-content: center; }
+.card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; max-width: 600px; width: 100%%; padding: 28px; box-shadow: 0 10px 25px rgba(0,0,0,0.4); }
+h1 { margin-top: 0; color: #60a5fa; font-size: 24px; display: flex; align-items: center; justify-content: space-between; }
+.badge { display: inline-block; padding: 4px 12px; border-radius: 20px; font-size: 13px; font-weight: 600; }
+.running { background: rgba(16, 185, 129, 0.2); color: #34d399; border: 1px solid #10b981; }
+.stopped { background: rgba(148, 163, 184, 0.2); color: #94a3b8; border: 1px solid #64748b; }
+.table { width: 100%%; margin: 20px 0; border-collapse: collapse; font-size: 14px; }
+.table td { padding: 10px 0; border-bottom: 1px solid #334155; }
+.table td:first-child { color: #94a3b8; width: 42%%; }
+.links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+.link-btn { display: inline-block; padding: 8px 16px; background: #334155; color: #38bdf8; text-decoration: none; border-radius: 6px; font-size: 13px; font-weight: 600; transition: all 0.2s; }
+.link-btn:hover { background: #475569; color: #fff; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Gofoom API <span class="badge %s">%s</span></h1>
+  <p style="color:#94a3b8; margin: 0 0 16px 0;">Local proxy facade and management service (v1.1.0) is active.</p>
+  <table class="table">
+    <tr><td>Proxy Status</td><td><b>%s</b> on port <b>%d</b></td></tr>
+    <tr><td>Listening Interface</td><td>%s</td></tr>
+    <tr><td>Upstream Proxy Type</td><td>%s</td></tr>
+    <tr><td>Active Connections</td><td>%d</td></tr>
+    <tr><td>Total Requests Processed</td><td>%d</td></tr>
+    <tr><td>Data Transferred (In / Out)</td><td>%.2f KB / %.2f KB</td></tr>
+  </table>
+  <div style="font-weight: 600; margin-bottom: 8px; color: #e2e8f0;">Available API Endpoints:</div>
+  <div class="links">
+    <a class="link-btn" href="/status">/status</a>
+    <a class="link-btn" href="/stats">/stats</a>
+    <a class="link-btn" href="/config">/config</a>
+    <a class="link-btn" href="/logs">/logs</a>
+  </div>
+</div>
+</body>
+</html>`,
+		strings.ToLower(statusStr), statusStr,
+		statusStr, cfg.LocalPort,
+		listenDesc,
+		cfg.ProxyType,
+		stats.ActiveConnections,
+		stats.TotalRequests,
+		float64(stats.BytesReceived)/1024.0,
+		float64(stats.BytesSent)/1024.0,
+	)
+	_, _ = w.Write([]byte(html))
 }

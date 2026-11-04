@@ -38,6 +38,28 @@ func removeHopByHopHeaders(header http.Header) {
 	}
 }
 
+// isLocalOrOwnHost checks whether host is localhost, loopback, or an IP bound to this machine.
+func isLocalOrOwnHost(host string) bool {
+	if host == "localhost" || host == "127.0.0.1" || host == "::1" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip != nil && ip.IsLoopback() {
+		return true
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err == nil {
+		for _, a := range addrs {
+			if ipNet, ok := a.(*net.IPNet); ok {
+				if ip != nil && ipNet.IP.Equal(ip) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 // handleForward processes standard non-CONNECT HTTP requests.
 func (s *ProxyServer) handleForward(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -52,6 +74,22 @@ func (s *ProxyServer) handleForward(w http.ResponseWriter, r *http.Request) {
 	}
 	if targetURL.Host == "" {
 		targetURL.Host = r.Host
+	}
+
+	// If the request is for Gofoom's internal API service on this machine,
+	// seamlessly route it to 127.0.0.1:ApiPort internally!
+	if s.config.ApiPort > 0 {
+		portStr := targetURL.Port()
+		if portStr == "" {
+			if targetURL.Scheme == "https" {
+				portStr = "443"
+			} else {
+				portStr = "80"
+			}
+		}
+		if portStr == fmt.Sprintf("%d", s.config.ApiPort) && isLocalOrOwnHost(targetURL.Hostname()) {
+			targetURL.Host = fmt.Sprintf("127.0.0.1:%d", s.config.ApiPort)
+		}
 	}
 
 	// Create cloned outbound request

@@ -70,8 +70,11 @@
     .log-container {
       background: #090d16; border: 1px solid #1e293b; border-radius: 6px; height: 150px;
       overflow-y: auto; padding: 8px; font-family: "Consolas", "Courier New", monospace; font-size: 11px;
+      user-select: text;
+      -webkit-user-select: text;
+      cursor: text;
     }
-    .log-line { margin-bottom: 3px; line-height: 1.4; word-break: break-all; }
+    .log-line { margin-bottom: 3px; line-height: 1.4; word-break: break-all; user-select: text; -webkit-user-select: text; }
     .log-time { color: #64748b; }
     .log-info { color: #38bdf8; }
     .log-err { color: #f87171; }
@@ -200,7 +203,7 @@
   <header>
     <div class="brand">
       <h1>Gofoom</h1>
-      <span id="brandSubtitle">v1.0.0</span>
+      <span id="brandSubtitle">v1.1.0</span>
     </div>
     <div style="display: flex; gap: 10px; align-items: center;">
       <button class="btn btn-outline btn-sm" onclick="openPrefModal()">⚙ Preferences</button>
@@ -252,6 +255,10 @@
         <div class="form-group">
           <label>Local Proxy Port</label>
           <input type="number" id="localPort" value="3129">
+          <label class="checkbox-group" style="margin-top: 6px;">
+            <input type="checkbox" id="allowLan">
+            <span style="font-size: 11px;">Allow LAN connections (0.0.0.0)</span>
+          </label>
         </div>
       </div>
 
@@ -444,6 +451,7 @@
           document.getElementById("autoStartProxy").checked = cfg.autostart ?? false;
           document.getElementById("startMinimized").checked = cfg.startMinimized ?? false;
           document.getElementById("launchOnStartup").checked = cfg.launchOnStartup ?? false;
+          document.getElementById("allowLan").checked = cfg.allowLan ?? false;
           onProxyTypeChange();
           onUseCurrentCredsChange();
         }
@@ -465,7 +473,8 @@
         proxyTestUrl: document.getElementById("testUrl").value,
         autostart: document.getElementById("autoStartProxy").checked,
         startMinimized: document.getElementById("startMinimized").checked,
-        launchOnStartup: document.getElementById("launchOnStartup").checked
+        launchOnStartup: document.getElementById("launchOnStartup").checked,
+        allowLan: document.getElementById("allowLan").checked
       };
 
       try {
@@ -596,7 +605,7 @@
 
     // Connect to Wails event bus if available, or poll
     window.addEventListener("DOMContentLoaded", () => {
-      document.getElementById("brandSubtitle").textContent = "v1.0.0 (API :" + apiPort + ")";
+      document.getElementById("brandSubtitle").textContent = "v1.1.0 (API :" + apiPort + ")";
       const initMsg = document.getElementById("sysInitMsg");
       if (initMsg) initMsg.textContent = "Gofoom UI ready. Local API active on :" + apiPort + ".";
 

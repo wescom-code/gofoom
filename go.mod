@@ -7,7 +7,7 @@ require (
 	github.com/alexbrainman/sspi v0.0.0-20250919150558-7d374ff0d59e
 	github.com/dop251/goja v0.0.0-20260926152631-39ec2650adc9
 	github.com/wailsapp/wails/v3 v3.0.0-beta.26
-	golang.org/x/net v0.59.0
+	golang.org/x/net v0.60.0
 	golang.org/x/sys v0.48.0
 )
 

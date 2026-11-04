@@ -18,6 +18,7 @@ type AppConfig struct {
 	ProxyUsername         string `json:"proxyUsername"`
 	ProxyPassword         string `json:"proxyPassword"`
 	LocalPort             int    `json:"localPort"`
+	AllowLan              bool   `json:"allowLan"`
 	ProxyTestURL          string `json:"proxyTestUrl"`
 	UseCurrentCredentials bool   `json:"useCurrentCredentials"`
 	HttpAuthProtocol      string `json:"httpAuthProtocol"`
@@ -135,6 +136,11 @@ func (cm *ConfigManager) ToServerConfig() proxy.ServerConfig {
 	pt, _ := proxy.NormalizeProxyType(c.ProxyType)
 	sc := proxy.DefaultServerConfig()
 	sc.LocalPort = c.LocalPort
+	sc.ApiPort = c.ApiPort
+	if sc.ApiPort <= 0 {
+		sc.ApiPort = 9999
+	}
+	sc.AllowLan = c.AllowLan
 	sc.ProxyTestURL = c.ProxyTestURL
 	sc.Upstream = proxy.UpstreamConfig{
 		Type:                  pt,

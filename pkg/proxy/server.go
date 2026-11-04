@@ -40,7 +40,13 @@ func (s *ProxyServer) Start() error {
 		return fmt.Errorf("proxy server is already running on port %d", s.config.LocalPort)
 	}
 
-	addr := fmt.Sprintf("127.0.0.1:%d", s.config.LocalPort)
+	bindHost := "127.0.0.1"
+	scope := "Local only"
+	if s.config.AllowLan {
+		bindHost = "0.0.0.0"
+		scope = "LAN accessible"
+	}
+	addr := fmt.Sprintf("%s:%d", bindHost, s.config.LocalPort)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		s.mu.Unlock()
@@ -59,7 +65,7 @@ func (s *ProxyServer) Start() error {
 	s.log(LogEvent{
 		Timestamp: time.Now(),
 		Level:     "INFO",
-		Message:   fmt.Sprintf("Gofoom Proxy Server started on %s (Upstream: %s)", addr, s.config.Upstream.Type),
+		Message:   fmt.Sprintf("Gofoom Proxy Server started on %s (%s, Upstream: %s)", addr, scope, s.config.Upstream.Type),
 	})
 
 	go func() {

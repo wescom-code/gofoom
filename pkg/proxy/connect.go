@@ -75,7 +75,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	defer clientConn.Close()
 
 	// Write 200 Connection Established to client
-	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\nProxy-Agent: Gofoom/1.0\r\n\r\n"))
+	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\nProxy-Agent: Gofoom/1.1\r\n\r\n"))
 	if err != nil {
 		s.stats.IncErrors()
 		return

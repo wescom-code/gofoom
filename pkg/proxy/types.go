@@ -52,6 +52,8 @@ type UpstreamConfig struct {
 // ServerConfig holds the proxy server configuration.
 type ServerConfig struct {
 	LocalPort      int            `json:"localPort"`
+	ApiPort        int            `json:"apiPort,omitempty"`
+	AllowLan       bool           `json:"allowLan"`
 	Upstream       UpstreamConfig `json:"upstream"`
 	ProxyTestURL   string         `json:"proxyTestUrl"`
 	ConnectTimeout time.Duration  `json:"connectTimeout"`
@@ -63,6 +65,8 @@ type ServerConfig struct {
 func DefaultServerConfig() ServerConfig {
 	return ServerConfig{
 		LocalPort: 3129,
+		ApiPort:   9999,
+		AllowLan:  false,
 		Upstream: UpstreamConfig{
 			Type:                  ProxyTypeDirect,
 			Host:                  "",
@@ -70,7 +74,7 @@ func DefaultServerConfig() ServerConfig {
 			UseCurrentCredentials: true,
 		},
 		ProxyTestURL:   "https://example.com",
-		ConnectTimeout: 10 * time.Second,
+		ConnectTimeout: 15 * time.Second,
 		ReadTimeout:    60 * time.Second,
 		WriteTimeout:   60 * time.Second,
 	}
