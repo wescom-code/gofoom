@@ -825,6 +825,26 @@
             <span class="pref-desc">Automatically registers Gofoom to start in the background when logging into Windows.</span>
           </div>
         </label>
+
+        <div style="font-size: 11px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-top: 10px;">
+          Resource Optimization (WebView2 Memory)
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label class="pref-option">
+            <input type="radio" name="memoryPolicy" value="none">
+            <div class="pref-info">
+              <span class="pref-label">⚡ Keep Resident (Fastest Reopen)</span>
+              <span class="pref-desc">Keeps UI window resident in background when closed to tray. Reopens instantly with zero latency.</span>
+            </div>
+          </label>
+          <label class="pref-option">
+            <input type="radio" name="memoryPolicy" value="hide">
+            <div class="pref-info">
+              <span class="pref-label">🍃 Destroy Window on Close to Tray</span>
+              <span class="pref-desc">Destroys UI window when closed to tray for maximum resource saving. Allows pure 15MB Go startup when minimized.</span>
+            </div>
+          </label>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-outline btn-sm" onclick="closePrefModal()">Close</button>
@@ -863,10 +883,10 @@
           text.textContent = "Auto";
         } else if (mode === "split") {
           icon.textContent = "🖥️";
-          text.textContent = "雙欄";
+          text.textContent = "Split";
         } else {
           icon.textContent = "📱";
-          text.textContent = "單欄";
+          text.textContent = "Stacked";
         }
       }
 
@@ -924,6 +944,11 @@
       const radios = document.getElementsByName("uiLayoutMode");
       for (const r of radios) {
         r.checked = (r.value === currentLayoutMode);
+      }
+      // Sync memoryPolicy radio
+      const memRadios = document.getElementsByName("memoryPolicy");
+      for (const r of memRadios) {
+        r.checked = (r.value === (window.__currentMemoryPolicy || "none"));
       }
       document.getElementById("prefModal").classList.add("active");
     }
@@ -1031,6 +1056,13 @@
           document.getElementById("startMinimized").checked = cfg.startMinimized ?? false;
           document.getElementById("launchOnStartup").checked = cfg.launchOnStartup ?? false;
           document.getElementById("allowLan").checked = cfg.allowLan ?? false;
+          let policy = cfg.memoryPolicy || "none";
+          if (policy === "minimize") policy = "hide";
+          window.__currentMemoryPolicy = policy;
+          const memRadios = document.getElementsByName("memoryPolicy");
+          for (const r of memRadios) {
+            r.checked = (r.value === policy);
+          }
           onProxyTypeChange();
           onUseCurrentCredsChange();
         }
@@ -1040,6 +1072,16 @@
     }
 
     async function saveConfig() {
+      let memPolicy = "none";
+      const memRadios = document.getElementsByName("memoryPolicy");
+      for (const r of memRadios) {
+        if (r.checked) {
+          memPolicy = r.value;
+          break;
+        }
+      }
+      window.__currentMemoryPolicy = memPolicy;
+
       const cfg = {
         proxyType: document.getElementById("proxyType").value,
         localPort: parseInt(document.getElementById("localPort").value, 10),
@@ -1055,7 +1097,8 @@
         autostart: document.getElementById("autoStartProxy").checked,
         startMinimized: document.getElementById("startMinimized").checked,
         launchOnStartup: document.getElementById("launchOnStartup").checked,
-        allowLan: document.getElementById("allowLan").checked
+        allowLan: document.getElementById("allowLan").checked,
+        memoryPolicy: memPolicy
       };
 
       try {
@@ -1214,6 +1257,11 @@
       if (statsTimer) { clearInterval(statsTimer); statsTimer = null; }
       if (logsTimer) { clearInterval(logsTimer); logsTimer = null; }
     }
+    window.startTimers = startTimers;
+    window.stopTimers = stopTimers;
+    window.updateStatus = updateStatus;
+    window.updateStats = updateStats;
+    window.updateLogs = updateLogs;
 
     // Connect to Wails event bus if available, or poll
     window.addEventListener("DOMContentLoaded", () => {

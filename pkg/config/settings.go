@@ -29,6 +29,7 @@ type AppConfig struct {
 	AutoDetect            bool   `json:"autodetect"`
 	LaunchOnStartup       bool   `json:"launchOnStartup"`
 	ApiPort               int    `json:"apiPort,omitempty"`
+	MemoryPolicy          string `json:"memoryPolicy,omitempty"`
 }
 
 // ConfigManager handles loading and persisting settings.
@@ -48,6 +49,7 @@ func DefaultAppConfig() AppConfig {
 		UseCurrentCredentials: true,
 		HttpAuthProtocol:      "NTLM",
 		BlacklistTimeout:      5,
+		MemoryPolicy:          "none",
 	}
 }
 

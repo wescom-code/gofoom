@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"gofoom/pkg/api"
@@ -39,6 +40,12 @@ type AppUI struct {
 	iconBytes   []byte
 	assets      fs.FS
 	lastTitle   string
+
+	winMu      sync.Mutex
+	lastWidth  int
+	lastHeight int
+	lastX      int
+	lastY      int
 }
 
 // NewAppUI initializes the AppUI manager.
@@ -55,6 +62,8 @@ func NewAppUI(
 		apiServer:   apiSrv,
 		iconBytes:   icon,
 		assets:      assets,
+		lastWidth:   780,
+		lastHeight:  680,
 	}
 }
 
@@ -72,43 +81,25 @@ func (u *AppUI) Run(startMinimized bool) error {
 		SingleInstance: &application.SingleInstanceOptions{
 			UniqueID: uniqueID,
 			OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
-				if u.window != nil {
-					u.window.Show()
-					u.window.Focus()
-				}
+				u.showWindow()
 			},
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(u.assets),
 		},
+		Windows: application.WindowsOptions{
+			DisableQuitOnLastWindowClosed: true,
+		},
 	})
 	u.app = app
 
-	apiPort := 9999
-	if u.apiServer != nil {
-		apiPort = u.apiServer.Port()
+	policy := u.getMemoryPolicy()
+	if startMinimized && policy == "hide" {
+		// Launch quietly into system tray without initializing WebView2, saving ~200MB+ RAM!
+		u.window = nil
+	} else {
+		u.createWindow(startMinimized)
 	}
-
-	initialTitle := u.getStatusTitle()
-	u.lastTitle = initialTitle
-
-	// Create Webview Window
-	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:         initialTitle,
-		Width:         780,
-		Height:        680,
-		Hidden:        startMinimized,
-		DisableResize: false,
-		URL:           fmt.Sprintf("/?apiPort=%d", apiPort),
-		JS:            fmt.Sprintf("window.GOFOOM_API_PORT = %d; window.GOFOOM_VERSION = %q;", apiPort, version.Version),
-	})
-	u.window = win
-
-	// Hide instead of quitting when close button is clicked
-	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
-		event.Cancel()
-		win.Hide()
-	})
 
 	// Setup System Tray
 	tray := app.SystemTray.New()
@@ -118,8 +109,7 @@ func (u *AppUI) Run(startMinimized bool) error {
 
 	trayMenu := app.Menu.New()
 	trayMenu.Add("Show Dashboard").OnClick(func(ctx *application.Context) {
-		win.Show()
-		win.Focus()
+		u.showWindow()
 	})
 
 	trayMenu.AddSeparator()
@@ -199,12 +189,7 @@ func (u *AppUI) Run(startMinimized bool) error {
 
 	// Left click on tray toggles the window
 	tray.OnClick(func() {
-		if win.IsVisible() {
-			win.Hide()
-		} else {
-			win.Show()
-			win.Focus()
-		}
+		u.toggleWindow()
 	})
 
 	// Stream proxy logs to Wails event bus
@@ -229,6 +214,203 @@ func (u *AppUI) Run(startMinimized bool) error {
 	}()
 
 	return app.Run()
+}
+
+func (u *AppUI) getMemoryPolicy() string {
+	if u.configMgr == nil {
+		return "none"
+	}
+	p := strings.ToLower(strings.TrimSpace(u.configMgr.Get().MemoryPolicy))
+	if p == "hide" || p == "minimize" || p == "tray" {
+		return "hide"
+	}
+	return "none"
+}
+
+func (u *AppUI) saveWindowBounds(w *application.WebviewWindow) {
+	if w == nil {
+		return
+	}
+	width := w.Width()
+	height := w.Height()
+	if width > 100 && height > 100 {
+		u.lastWidth = width
+		u.lastHeight = height
+	}
+	x, y := w.Position()
+	if x > 0 && y > 0 {
+		u.lastX = x
+		u.lastY = y
+	}
+}
+
+func (u *AppUI) getDashboardURL() string {
+	apiPort := 9999
+	if u.apiServer != nil {
+		apiPort = u.apiServer.Port()
+	}
+	return fmt.Sprintf("/?apiPort=%d", apiPort)
+}
+
+func (u *AppUI) setupWindowHooks(win *application.WebviewWindow) {
+	// Intercept window closing (clicking "X" button)
+	win.RegisterHook(events.Common.WindowClosing, func(event *application.WindowEvent) {
+		policy := u.getMemoryPolicy()
+		if policy == "hide" {
+			u.saveWindowBounds(win)
+			u.winMu.Lock()
+			u.window = nil
+			u.winMu.Unlock()
+			go func() {
+				time.Sleep(200 * time.Millisecond)
+				setEfficiencyMode(true)
+				trimMemory()
+			}()
+			return // Allow close without cancelling -> Wails destroys HWND and WebView2 terminates
+		}
+		event.Cancel()
+		setEfficiencyMode(true)
+		win.ExecJS("if (window.stopTimers) window.stopTimers();")
+		win.Hide()
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			setEfficiencyMode(true)
+			trimMemory()
+		}()
+	})
+
+	// Hook window minimize event (clicking "—" button)
+	win.OnWindowEvent(events.Common.WindowMinimise, func(event *application.WindowEvent) {
+		// Pause frontend JS polling timers to avoid continuous background HTTP requests
+		win.ExecJS("if (window.stopTimers) window.stopTimers();")
+
+		// Activate Windows Efficiency Mode (EcoQoS / Green Leaf 🍃) on all WebView2 processes
+		setEfficiencyMode(true)
+
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			setEfficiencyMode(true)
+			trimMemory()
+		}()
+	})
+
+	// Hook window unminimize / restore events (clicking window on taskbar)
+	restoreHandler := func(event *application.WindowEvent) {
+		// Restore normal CPU priority and clear Efficiency Mode
+		setEfficiencyMode(false)
+
+		// Resume frontend JS polling timers
+		win.ExecJS("if (window.startTimers) { window.startTimers(); window.updateStatus(); window.updateStats(); window.updateLogs(); }")
+	}
+	win.OnWindowEvent(events.Common.WindowUnMinimise, restoreHandler)
+	win.OnWindowEvent(events.Common.WindowRestore, restoreHandler)
+}
+
+func (u *AppUI) createWindow(hidden bool) *application.WebviewWindow {
+	apiPort := 9999
+	if u.apiServer != nil {
+		apiPort = u.apiServer.Port()
+	}
+
+	title := u.getStatusTitle()
+	u.lastTitle = title
+
+	w := u.lastWidth
+	h := u.lastHeight
+	if w <= 100 {
+		w = 780
+	}
+	if h <= 100 {
+		h = 680
+	}
+
+	opts := application.WebviewWindowOptions{
+		Title:         title,
+		Width:         w,
+		Height:        h,
+		Hidden:        hidden,
+		DisableResize: false,
+		URL:           u.getDashboardURL(),
+		JS:            fmt.Sprintf("window.GOFOOM_API_PORT = %d; window.GOFOOM_VERSION = %q;", apiPort, version.Version),
+	}
+
+	if u.lastX > 0 && u.lastY > 0 {
+		opts.InitialPosition = application.WindowXY
+		opts.X = u.lastX
+		opts.Y = u.lastY
+	} else {
+		opts.InitialPosition = application.WindowCentered
+	}
+
+	win := u.app.Window.NewWithOptions(opts)
+	u.window = win
+
+	u.setupWindowHooks(win)
+
+	if !hidden {
+		win.Show()
+		win.Focus()
+	}
+
+	return win
+}
+
+func (u *AppUI) showWindow() {
+	u.winMu.Lock()
+	defer u.winMu.Unlock()
+
+	setEfficiencyMode(false)
+
+	if u.window != nil {
+		if u.window.IsMinimised() {
+			u.window.UnMinimise()
+		}
+		u.window.Show()
+		u.window.Focus()
+		u.window.ExecJS("if (window.startTimers) { window.startTimers(); window.updateStatus(); window.updateStats(); window.updateLogs(); }")
+		return
+	}
+
+	u.createWindow(false)
+}
+
+func (u *AppUI) toggleWindow() {
+	u.winMu.Lock()
+	defer u.winMu.Unlock()
+
+	if u.window != nil {
+		if u.window.IsVisible() && !u.window.IsMinimised() {
+			policy := u.getMemoryPolicy()
+			if policy == "hide" {
+				u.saveWindowBounds(u.window)
+				w := u.window
+				u.window = nil
+				w.Close()
+				return
+			}
+			setEfficiencyMode(true)
+			u.window.ExecJS("if (window.stopTimers) window.stopTimers();")
+			u.window.Hide()
+			go func() {
+				time.Sleep(200 * time.Millisecond)
+				setEfficiencyMode(true)
+				trimMemory()
+			}()
+			return
+		}
+
+		setEfficiencyMode(false)
+		if u.window.IsMinimised() {
+			u.window.UnMinimise()
+		}
+		u.window.Show()
+		u.window.Focus()
+		u.window.ExecJS("if (window.startTimers) { window.startTimers(); window.updateStatus(); window.updateStats(); window.updateLogs(); }")
+		return
+	}
+
+	setEfficiencyMode(false)
+	u.createWindow(false)
 }
 
 func (u *AppUI) getStatusTitle() string {
@@ -272,8 +454,11 @@ func (u *AppUI) updateTrayState(tray *application.SystemTray, statusItem, toggle
 
 	title := u.getStatusTitle()
 	tray.SetTooltip(title)
-	if u.window != nil && u.lastTitle != title {
+	u.winMu.Lock()
+	w := u.window
+	u.winMu.Unlock()
+	if w != nil && u.lastTitle != title {
 		u.lastTitle = title
-		u.window.SetTitle(title)
+		w.SetTitle(title)
 	}
 }

@@ -103,6 +103,7 @@ func TestApiServerEndpoints(t *testing.T) {
 	updateCfg.ProxyType = "HTTP"
 	updateCfg.ProxyHost = "192.168.1.100"
 	updateCfg.ProxyPort = 8080
+	updateCfg.MemoryPolicy = "hide"
 	cfgData, _ := json.Marshal(updateCfg)
 
 	resp, err = http.Post(apiURL+"/config", "application/json", bytes.NewReader(cfgData))
@@ -113,6 +114,11 @@ func TestApiServerEndpoints(t *testing.T) {
 	resp.Body.Close()
 	if !strings.Contains(string(body), "changed") {
 		t.Errorf("Expected changed message, got %s", string(body))
+	}
+
+	// Verify MemoryPolicy was updated
+	if cfgMgr.Get().MemoryPolicy != "hide" {
+		t.Errorf("Expected MemoryPolicy 'hide', got '%s'", cfgMgr.Get().MemoryPolicy)
 	}
 
 	// 7. Test CORS Preflight OPTIONS
