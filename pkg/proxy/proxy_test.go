@@ -1,8 +1,11 @@
 package proxy
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -335,5 +338,205 @@ func TestConnectTunnelRestartAndStatsCounting(t *testing.T) {
 	if st2.BytesReceived <= st1.BytesReceived || st2.BytesSent <= st1.BytesSent {
 		t.Errorf("Expected st2 > st1, got st1=(In:%d, Out:%d) st2=(In:%d, Out:%d)",
 			st1.BytesReceived, st1.BytesSent, st2.BytesReceived, st2.BytesSent)
+	}
+}
+
+func TestForwardNoXForwardedFor(t *testing.T) {
+	var receivedXFF string
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		receivedXFF = r.Header.Get("X-Forwarded-For")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer targetServer.Close()
+
+	cfg := DefaultServerConfig()
+	cfg.LocalPort = 13135
+	cfg.Upstream = UpstreamConfig{Type: ProxyTypeDirect}
+	proxySrv := NewServer(cfg)
+	if err := proxySrv.Start(); err != nil {
+		t.Fatalf("Failed to start proxy server: %v", err)
+	}
+	defer proxySrv.Stop()
+	time.Sleep(50 * time.Millisecond)
+
+	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cfg.LocalPort))
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+		Timeout: 5 * time.Second,
+	}
+
+	resp, err := client.Get(targetServer.URL + "/test-ha")
+	if err != nil {
+		t.Fatalf("Get failed: %v", err)
+	}
+	resp.Body.Close()
+
+	if receivedXFF != "" {
+		t.Errorf("Expected NO X-Forwarded-For header, got: %q", receivedXFF)
+	}
+}
+
+func TestWebSocketUpgradeForward(t *testing.T) {
+	targetServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			http.Error(w, "Not websocket", http.StatusBadRequest)
+			return
+		}
+		hijacker, ok := w.(http.Hijacker)
+		if !ok {
+			http.Error(w, "Hijack not supported", http.StatusInternalServerError)
+			return
+		}
+		conn, buf, err := hijacker.Hijack()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+
+		// Send 101 Switching Protocols response
+		_, _ = conn.Write([]byte("HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\r\n"))
+
+		// Read client data and echo it back
+		var data [64]byte
+		n, err := buf.Read(data[:])
+		if n > 0 {
+			_, _ = conn.Write(append([]byte("ECHO: "), data[:n]...))
+		}
+	}))
+	defer targetServer.Close()
+
+	cfg := DefaultServerConfig()
+	cfg.LocalPort = 13136
+	cfg.Upstream = UpstreamConfig{Type: ProxyTypeDirect}
+	proxySrv := NewServer(cfg)
+	if err := proxySrv.Start(); err != nil {
+		t.Fatalf("Failed to start proxy server: %v", err)
+	}
+	defer proxySrv.Stop()
+	time.Sleep(50 * time.Millisecond)
+
+	// Connect raw TCP client to proxy
+	clientConn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", cfg.LocalPort))
+	if err != nil {
+		t.Fatalf("Dial proxy failed: %v", err)
+	}
+	defer clientConn.Close()
+
+	// Send forward proxy request with Upgrade header
+	u, _ := url.Parse(targetServer.URL)
+	req := fmt.Sprintf("GET %s/api/websocket HTTP/1.1\r\nHost: %s\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Key: dGVzdA==\r\n\r\n", targetServer.URL, u.Host)
+	if _, err := clientConn.Write([]byte(req)); err != nil {
+		t.Fatalf("Write request failed: %v", err)
+	}
+
+	reader := bufio.NewReader(clientConn)
+	statusLine, err := reader.ReadString('\n')
+	if err != nil {
+		t.Fatalf("Read status line failed: %v", err)
+	}
+	if !strings.Contains(statusLine, "101") {
+		t.Fatalf("Expected 101 Switching Protocols, got: %s", statusLine)
+	}
+
+	// Consume headers until blank line
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil || strings.TrimSpace(line) == "" {
+			break
+		}
+	}
+
+	// Send frame/payload over full-duplex tunnel
+	msg := []byte("ping-homeassistant-ws")
+	if _, err := clientConn.Write(msg); err != nil {
+		t.Fatalf("Write ws msg failed: %v", err)
+	}
+
+	reply := make([]byte, 64)
+	n, err := reader.Read(reply)
+	if err != nil {
+		t.Fatalf("Read ws echo failed: %v", err)
+	}
+	if !strings.Contains(string(reply[:n]), "ECHO: ping-homeassistant-ws") {
+		t.Errorf("Unexpected reply: %s", string(reply[:n]))
+	}
+
+	// Verify stats counted the duplex traffic
+	stats := proxySrv.GetStats()
+	if stats.BytesReceived == 0 || stats.BytesSent == 0 {
+		t.Errorf("Expected traffic counted, got In=%d, Out=%d", stats.BytesReceived, stats.BytesSent)
+	}
+}
+
+func TestClientCanceledDoesNotBlacklistPacProxy(t *testing.T) {
+	// 1. Setup a healthy but slow mock upstream proxy
+	mockProxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(300 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("mock response"))
+	}))
+	defer mockProxy.Close()
+
+	uProxy, _ := url.Parse(mockProxy.URL)
+	var proxyPort int
+	fmt.Sscanf(uProxy.Port(), "%d", &proxyPort)
+
+	// 2. PAC script pointing to this healthy mock proxy
+	pacScript := fmt.Sprintf(`function FindProxyForURL(url, host) {
+		return "PROXY 127.0.0.1:%d; DIRECT";
+	}`, proxyPort)
+	pacFile := t.TempDir() + "/test_cancel.pac"
+	if err := os.WriteFile(pacFile, []byte(pacScript), 0644); err != nil {
+		t.Fatalf("Failed to write test PAC file: %v", err)
+	}
+
+	cfg := DefaultServerConfig()
+	cfg.LocalPort = 13137
+	cfg.ConnectTimeout = 2 * time.Second
+	cfg.Upstream = UpstreamConfig{
+		Type:             ProxyTypePAC,
+		PacFileLocation:  pacFile,
+		BlacklistTimeout: 5,
+	}
+
+	proxySrv := NewServer(cfg)
+	if err := proxySrv.Start(); err != nil {
+		t.Fatalf("Failed to start proxy server: %v", err)
+	}
+	defer proxySrv.Stop()
+	time.Sleep(50 * time.Millisecond)
+
+	// 3. Client sends request with a short 20ms timeout so context cancels during request
+	proxyURL, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", cfg.LocalPort))
+	client := &http.Client{
+		Transport: &http.Transport{
+			Proxy: http.ProxyURL(proxyURL),
+		},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	req, _ := http.NewRequestWithContext(ctx, "GET", "http://example.com/test-cancel", nil)
+	_, _ = client.Do(req)
+
+	time.Sleep(50 * time.Millisecond)
+
+	// 4. Verify that the healthy mockProxy was NOT blacklisted!
+	eval := proxySrv.GetPacEvaluator()
+	if eval == nil {
+		t.Fatalf("Expected non-nil PacEvaluator")
+	}
+	if eval.Blacklist().IsBlacklisted("127.0.0.1", proxyPort) {
+		t.Errorf("Expected 127.0.0.1:%d NOT to be blacklisted when client canceled the request", proxyPort)
+	}
+
+	// 5. Verify that errors were not incremented
+	stats := proxySrv.GetStats()
+	if stats.ErrorsCount != 0 {
+		t.Errorf("Expected ErrorsCount == 0 for client canceled request, got %d", stats.ErrorsCount)
 	}
 }

@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -17,6 +18,60 @@ var bufferPool = sync.Pool{
 		buf := make([]byte, 32*1024) // 32KB buffer for high throughput
 		return &buf
 	},
+}
+
+// dialUpstreamTunnel establishes a tunnel to the target host:port, honoring PAC, upstream proxy and timeouts.
+func (s *ProxyServer) dialUpstreamTunnel(ctx context.Context, rawURL string, target string, clientAddr string) (net.Conn, error) {
+	if s.config.Upstream.Type == ProxyTypePAC && s.pacEvaluator != nil {
+		targetHost := target
+		if h, _, splitErr := net.SplitHostPort(target); splitErr == nil {
+			targetHost = h
+		}
+		if rawURL == "" {
+			rawURL = "https://" + target
+		}
+		candidates, evalErr := s.pacEvaluator.FindProxyForURL(rawURL, targetHost)
+		if evalErr != nil || len(candidates) == 0 {
+			dialer := NewUpstreamDialer(UpstreamConfig{Type: ProxyTypeDirect}, s.config.ConnectTimeout)
+			return dialer.DialTunnel(ctx, target)
+		}
+
+		var lastErr error
+		for _, cand := range candidates {
+			candCfg := s.config.Upstream
+			candType, normErr := NormalizeProxyType(cand.Type)
+			if normErr != nil {
+				candType = ProxyTypeHTTP
+			}
+			candCfg.Type = candType
+			candCfg.Host = cand.Host
+			candCfg.Port = cand.Port
+
+			candDialer := NewUpstreamDialer(candCfg, s.config.ConnectTimeout)
+			conn, dialErr := candDialer.DialTunnel(ctx, target)
+			if dialErr == nil {
+				return conn, nil
+			}
+			lastErr = dialErr
+
+			// Never blacklist if the error was due to client/caller cancelling the request!
+			if cand.Type != "DIRECT" && !errors.Is(dialErr, context.Canceled) && !errors.Is(ctx.Err(), context.Canceled) {
+				s.pacEvaluator.Blacklist().Add(cand.Host, cand.Port)
+				s.log(LogEvent{
+					Timestamp: time.Now(),
+					Level:     "WARN",
+					Client:    clientAddr,
+					Method:    "TUNNEL",
+					Target:    target,
+					Message:   fmt.Sprintf("PAC proxy %s:%d failed (%v); blacklisted and failing over", cand.Host, cand.Port, dialErr),
+				})
+			}
+		}
+		return nil, lastErr
+	}
+
+	dialer := NewUpstreamDialer(s.config.Upstream, s.config.ConnectTimeout)
+	return dialer.DialTunnel(ctx, target)
 }
 
 // handleConnect processes HTTP CONNECT requests for TLS tunneling.
@@ -38,57 +93,21 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), s.config.ConnectTimeout)
 	defer cancel()
 
-	var upstreamConn net.Conn
-	var err error
-
-	if s.config.Upstream.Type == ProxyTypePAC && s.pacEvaluator != nil {
-		targetHost := target
-		if h, _, splitErr := net.SplitHostPort(target); splitErr == nil {
-			targetHost = h
-		}
-		rawURL := "https://" + target
-		candidates, evalErr := s.pacEvaluator.FindProxyForURL(rawURL, targetHost)
-		if evalErr != nil || len(candidates) == 0 {
-			dialer := NewUpstreamDialer(UpstreamConfig{Type: ProxyTypeDirect}, s.config.ConnectTimeout)
-			upstreamConn, err = dialer.DialTunnel(ctx, target)
-		} else {
-			for _, cand := range candidates {
-				candCfg := s.config.Upstream
-				candType, normErr := NormalizeProxyType(cand.Type)
-				if normErr != nil {
-					candType = ProxyTypeHTTP
-				}
-				candCfg.Type = candType
-				candCfg.Host = cand.Host
-				candCfg.Port = cand.Port
-
-				candDialer := NewUpstreamDialer(candCfg, s.config.ConnectTimeout)
-				conn, dialErr := candDialer.DialTunnel(ctx, target)
-				if dialErr == nil {
-					upstreamConn = conn
-					err = nil
-					break
-				}
-				err = dialErr
-				if cand.Type != "DIRECT" {
-					s.pacEvaluator.Blacklist().Add(cand.Host, cand.Port)
-					s.log(LogEvent{
-						Timestamp: time.Now(),
-						Level:     "WARN",
-						Client:    r.RemoteAddr,
-						Method:    "CONNECT",
-						Target:    target,
-						Message:   fmt.Sprintf("PAC proxy %s:%d failed (%v); blacklisted and failing over", cand.Host, cand.Port, dialErr),
-					})
-				}
-			}
-		}
-	} else {
-		dialer := NewUpstreamDialer(s.config.Upstream, s.config.ConnectTimeout)
-		upstreamConn, err = dialer.DialTunnel(ctx, target)
-	}
-
+	upstreamConn, err := s.dialUpstreamTunnel(ctx, "", target, r.RemoteAddr)
 	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(r.Context().Err(), context.Canceled) {
+			s.log(LogEvent{
+				Timestamp: time.Now(),
+				Level:     "DEBUG",
+				Client:    r.RemoteAddr,
+				Method:    r.Method,
+				Target:    target,
+				Status:    499,
+				Message:   "Client closed connection / connect canceled",
+				Duration:  time.Since(start),
+			})
+			return
+		}
 		s.stats.IncErrors()
 		s.log(LogEvent{
 			Timestamp: time.Now(),
@@ -124,6 +143,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	defer clientConn.Close()
 	s.trackConn(clientConn)
 	defer s.untrackConn(clientConn)
+	_ = clientConn.SetDeadline(time.Time{}) // Clear http.Server read/write deadlines for long-lived tunnel
 
 	// Write 200 Connection Established to client
 	_, err = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\nProxy-Agent: Gofoom/1.1\r\n\r\n"))
@@ -145,7 +165,7 @@ func (s *ProxyServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Perform full-duplex bidirectional stream transfer
-	s.pipeDuplex(clientConn, upstreamConn, r.RemoteAddr, target, start)
+	s.pipeDuplex(clientConn, upstreamConn, r.RemoteAddr, "CONNECT", target, start)
 }
 
 type countingWriter struct {
@@ -168,7 +188,7 @@ func (cw *countingWriter) Write(p []byte) (int, error) {
 }
 
 // pipeDuplex handles bidirectional byte copying between client and upstream connections.
-func (s *ProxyServer) pipeDuplex(clientConn, upstreamConn net.Conn, clientAddr, target string, start time.Time) {
+func (s *ProxyServer) pipeDuplex(clientConn, upstreamConn net.Conn, clientAddr, method, target string, start time.Time) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 
@@ -210,7 +230,7 @@ func (s *ProxyServer) pipeDuplex(clientConn, upstreamConn net.Conn, clientAddr, 
 		Timestamp: time.Now(),
 		Level:     "INFO",
 		Client:    clientAddr,
-		Method:    "CONNECT",
+		Method:    method,
 		Target:    target,
 		Status:    http.StatusOK,
 		Message:   fmt.Sprintf("Tunnel closed (In: %d bytes, Out: %d bytes)", bytesIn, bytesOut),

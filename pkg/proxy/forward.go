@@ -3,6 +3,7 @@ package proxy
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -60,6 +61,24 @@ func isLocalOrOwnHost(host string) bool {
 	return false
 }
 
+// isUpgradeRequest detects whether the incoming HTTP request is requesting a protocol upgrade (e.g. WebSocket).
+func isUpgradeRequest(r *http.Request) bool {
+	if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+		return true
+	}
+	for _, h := range strings.Split(r.Header.Get("Connection"), ",") {
+		if strings.EqualFold(strings.TrimSpace(h), "upgrade") {
+			return true
+		}
+	}
+	for _, h := range strings.Split(r.Header.Get("Proxy-Connection"), ",") {
+		if strings.EqualFold(strings.TrimSpace(h), "upgrade") {
+			return true
+		}
+	}
+	return false
+}
+
 // handleForward processes standard non-CONNECT HTTP requests.
 func (s *ProxyServer) handleForward(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
@@ -92,6 +111,12 @@ func (s *ProxyServer) handleForward(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Intercept WebSocket and protocol Upgrade requests to perform full-duplex piping
+	if isUpgradeRequest(r) {
+		s.handleUpgrade(w, r, targetURL, start)
+		return
+	}
+
 	// Create cloned outbound request
 	outReq, err := http.NewRequestWithContext(r.Context(), r.Method, targetURL.String(), r.Body)
 	if err != nil {
@@ -111,19 +136,25 @@ func (s *ProxyServer) handleForward(w http.ResponseWriter, r *http.Request) {
 	}
 	s.stats.AddBytesOut(outBytes)
 
-	// Add standard forwarding metadata
-	clientIP, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil {
-		if prior := outReq.Header.Get("X-Forwarded-For"); prior != "" {
-			clientIP = prior + ", " + clientIP
-		}
-		outReq.Header.Set("X-Forwarded-For", clientIP)
-	}
-
 	// Execute through transport
 	transport := s.getTransport()
 	resp, err := transport.RoundTrip(outReq)
 	if err != nil {
+		// If client cancelled or closed connection, don't count as proxy error or blacklist proxy
+		if errors.Is(err, context.Canceled) || errors.Is(r.Context().Err(), context.Canceled) {
+			s.log(LogEvent{
+				Timestamp: time.Now(),
+				Level:     "DEBUG",
+				Client:    r.RemoteAddr,
+				Method:    r.Method,
+				Target:    targetURL.String(),
+				Status:    499, // Client Closed Request
+				Message:   "Client closed connection / request canceled",
+				Duration:  time.Since(start),
+			})
+			return
+		}
+
 		s.stats.IncErrors()
 		if s.config.Upstream.Type == ProxyTypePAC && s.pacEvaluator != nil {
 			candidates, evalErr := s.pacEvaluator.FindProxyForURL(targetURL.String(), targetURL.Hostname())
@@ -189,6 +220,122 @@ func (s *ProxyServer) handleForward(w http.ResponseWriter, r *http.Request) {
 		Message:   fmt.Sprintf("%d bytes transferred", n),
 		Duration:  time.Since(start),
 	})
+}
+
+// handleUpgrade processes HTTP requests that negotiate protocol upgrades, such as WebSocket connections.
+func (s *ProxyServer) handleUpgrade(w http.ResponseWriter, r *http.Request, targetURL *url.URL, start time.Time) {
+	targetHost := targetURL.Host
+	if !strings.Contains(targetHost, ":") {
+		if targetURL.Scheme == "https" {
+			targetHost += ":443"
+		} else {
+			targetHost += ":80"
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), s.config.ConnectTimeout)
+	defer cancel()
+
+	upstreamConn, err := s.dialUpstreamTunnel(ctx, targetURL.String(), targetHost, r.RemoteAddr)
+	if err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(r.Context().Err(), context.Canceled) {
+			s.log(LogEvent{
+				Timestamp: time.Now(),
+				Level:     "DEBUG",
+				Client:    r.RemoteAddr,
+				Method:    r.Method,
+				Target:    targetURL.String(),
+				Status:    499,
+				Message:   "Client closed connection / upgrade canceled",
+				Duration:  time.Since(start),
+			})
+			return
+		}
+		s.stats.IncErrors()
+		s.log(LogEvent{
+			Timestamp: time.Now(),
+			Level:     "ERROR",
+			Client:    r.RemoteAddr,
+			Method:    r.Method,
+			Target:    targetURL.String(),
+			Status:    http.StatusBadGateway,
+			Message:   fmt.Sprintf("Failed to dial upstream for upgrade: %v", err),
+			Duration:  time.Since(start),
+		})
+		http.Error(w, fmt.Sprintf("Gofoom: Bad Gateway: %v", err), http.StatusBadGateway)
+		return
+	}
+	defer upstreamConn.Close()
+	s.trackConn(upstreamConn)
+	defer s.untrackConn(upstreamConn)
+
+	hijacker, ok := w.(http.Hijacker)
+	if !ok {
+		s.stats.IncErrors()
+		http.Error(w, "Gofoom: Hijacking not supported", http.StatusInternalServerError)
+		return
+	}
+
+	clientConn, clientBuf, err := hijacker.Hijack()
+	if err != nil {
+		s.stats.IncErrors()
+		http.Error(w, fmt.Sprintf("Gofoom: Hijack failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	defer clientConn.Close()
+	s.trackConn(clientConn)
+	defer s.untrackConn(clientConn)
+	_ = clientConn.SetDeadline(time.Time{}) // Clear http.Server read/write deadlines for WebSocket session
+
+	// Build outbound request to upstream
+	outReq := r.Clone(r.Context())
+	outReq.RequestURI = ""
+	outReq.URL = targetURL
+
+	// Clean headers: remove proxy-specific hop-by-hop headers, but keep Upgrade & Connection
+	outReq.Header.Del("Proxy-Connection")
+	outReq.Header.Del("Proxy-Authenticate")
+	outReq.Header.Del("Proxy-Authorization")
+	if strings.Contains(strings.ToLower(r.Header.Get("Proxy-Connection")), "upgrade") {
+		if outReq.Header.Get("Connection") == "" {
+			outReq.Header.Set("Connection", "Upgrade")
+		}
+	}
+
+	// Write initial HTTP Upgrade request to upstream
+	cw := &countingWriter{
+		writer: upstreamConn,
+		onAdd:  s.stats.AddBytesOut,
+	}
+	if err := outReq.Write(cw); err != nil {
+		s.stats.IncErrors()
+		return
+	}
+
+	// Flush any buffered bytes already read from clientBuf
+	if clientBuf != nil && clientBuf.Reader.Buffered() > 0 {
+		bufferedData := make([]byte, clientBuf.Reader.Buffered())
+		n, _ := clientBuf.Read(bufferedData)
+		if n > 0 {
+			if _, err := upstreamConn.Write(bufferedData[:n]); err != nil {
+				return
+			}
+			s.stats.AddBytesOut(uint64(n))
+		}
+	}
+
+	s.log(LogEvent{
+		Timestamp: time.Now(),
+		Level:     "INFO",
+		Client:    r.RemoteAddr,
+		Method:    "UPGRADE",
+		Target:    targetURL.String(),
+		Status:    http.StatusSwitchingProtocols,
+		Message:   "Upgraded protocol tunnel established",
+	})
+
+	// Bidirectional full-duplex stream
+	s.pipeDuplex(clientConn, upstreamConn, r.RemoteAddr, "UPGRADE", targetURL.String(), start)
 }
 
 // createTransport builds an http.Transport according to current upstream proxy configuration.
