@@ -216,6 +216,13 @@ func (u *AppUI) Run(startMinimized bool) error {
 	return app.Run()
 }
 
+// Quit terminates the Wails application.
+func (u *AppUI) Quit() {
+	if u.app != nil {
+		u.app.Quit()
+	}
+}
+
 func (u *AppUI) getMemoryPolicy() string {
 	if u.configMgr == nil {
 		return "none"

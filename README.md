@@ -1,6 +1,6 @@
 # Gofoom
 
-[![Version](https://img.shields.io/badge/version-1.2.1-blue.svg)](https://github.com)
+[![Version](https://img.shields.io/badge/version-1.3.0-blue.svg)](https://github.com)
 [![Go Version](https://img.shields.io/badge/Go-1.22%2B-00ADD8?style=flat&logo=go)](https://golang.org)
 [![Wails v3](https://img.shields.io/badge/GUI-Wails%20v3-DF0000?style=flat)](https://v3.wails.io)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey)](https://github.com)

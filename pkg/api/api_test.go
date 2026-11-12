@@ -121,6 +121,46 @@ func TestApiServerEndpoints(t *testing.T) {
 		t.Errorf("Expected MemoryPolicy 'hide', got '%s'", cfgMgr.Get().MemoryPolicy)
 	}
 
+	// 6b. Test /preferences endpoint (Get & Post)
+	resp, err = http.Get(apiURL + "/preferences")
+	if err != nil {
+		t.Fatalf("Failed to GET /preferences: %v", err)
+	}
+	var prefResp map[string]interface{}
+	_ = json.NewDecoder(resp.Body).Decode(&prefResp)
+	resp.Body.Close()
+	if prefResp["memoryPolicy"] != "hide" {
+		t.Errorf("Expected GET /preferences memoryPolicy 'hide', got %v", prefResp["memoryPolicy"])
+	}
+
+	prefData, _ := json.Marshal(config.UserPreferences{
+		AutoStart:      true,
+		StartMinimized: true,
+		MemoryPolicy:   "none",
+		UILayoutMode:   "split",
+	})
+	resp, err = http.Post(apiURL+"/preferences", "application/json", bytes.NewReader(prefData))
+	if err != nil {
+		t.Fatalf("Failed to POST /preferences: %v", err)
+	}
+	body, _ = io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(body), "saved successfully") {
+		t.Errorf("Expected saved message, got %s", string(body))
+	}
+	if cfgMgr.Get().MemoryPolicy != "none" {
+		t.Errorf("Expected MemoryPolicy 'none', got '%s'", cfgMgr.Get().MemoryPolicy)
+	}
+	if !cfgMgr.Get().AutoStart {
+		t.Errorf("Expected AutoStart true, got false")
+	}
+	if !cfgMgr.Get().StartMinimized {
+		t.Errorf("Expected StartMinimized true, got false")
+	}
+	if cfgMgr.Get().UILayoutMode != "split" {
+		t.Errorf("Expected UILayoutMode 'split', got '%s'", cfgMgr.Get().UILayoutMode)
+	}
+
 	// 7. Test CORS Preflight OPTIONS
 	req, _ := http.NewRequest(http.MethodOptions, apiURL+"/config", nil)
 	req.Header.Set("Origin", "http://wails.localhost")

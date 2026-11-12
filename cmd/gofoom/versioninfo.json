@@ -2,14 +2,14 @@
 	"FixedFileInfo": {
 		"FileVersion": {
 			"Major": 1,
-			"Minor": 2,
-			"Patch": 1,
+			"Minor": 3,
+			"Patch": 0,
 			"Build": 0
 		},
 		"ProductVersion": {
 			"Major": 1,
-			"Minor": 2,
-			"Patch": 1,
+			"Minor": 3,
+			"Patch": 0,
 			"Build": 0
 		},
 		"FileFlagsMask": "3f",
@@ -22,14 +22,14 @@
 		"Comments": "High-Performance Proxy Facade with PAC, SOCKS5 \u0026 Fallback",
 		"CompanyName": "Gofoom Authors",
 		"FileDescription": "Gofoom Proxy Server",
-		"FileVersion": "1.2.1.0",
+		"FileVersion": "1.3.0.0",
 		"InternalName": "gofoom",
 		"LegalCopyright": "Copyright (c) 2026 Gofoom Authors",
 		"LegalTrademarks": "",
 		"OriginalFilename": "gofoom.exe",
 		"PrivateBuild": "",
 		"ProductName": "Gofoom",
-		"ProductVersion": "1.2.1",
+		"ProductVersion": "1.3.0",
 		"SpecialBuild": ""
 	},
 	"VarFileInfo": {

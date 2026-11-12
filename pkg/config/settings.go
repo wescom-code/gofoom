@@ -30,6 +30,7 @@ type AppConfig struct {
 	LaunchOnStartup       bool   `json:"launchOnStartup"`
 	ApiPort               int    `json:"apiPort,omitempty"`
 	MemoryPolicy          string `json:"memoryPolicy,omitempty"`
+	UILayoutMode          string `json:"uiLayoutMode,omitempty"`
 }
 
 // ConfigManager handles loading and persisting settings.
@@ -50,6 +51,7 @@ func DefaultAppConfig() AppConfig {
 		HttpAuthProtocol:      "NTLM",
 		BlacklistTimeout:      5,
 		MemoryPolicy:          "none",
+		UILayoutMode:          "auto",
 	}
 }
 
@@ -130,6 +132,42 @@ func (cm *ConfigManager) Update(newCfg AppConfig) error {
 		_ = sysproxy.SetWindowsStartup(newCfg.LaunchOnStartup)
 	}
 	cm.current = newCfg
+	cm.mu.Unlock()
+	return cm.Save()
+}
+
+// UserPreferences represents user preferences that can be updated independently of proxy network settings.
+type UserPreferences struct {
+	AutoStart       bool   `json:"autostart"`
+	StartMinimized  bool   `json:"startMinimized"`
+	LaunchOnStartup bool   `json:"launchOnStartup"`
+	MemoryPolicy    string `json:"memoryPolicy"`
+	UILayoutMode    string `json:"uiLayoutMode,omitempty"`
+}
+
+// UpdatePreferences updates only the preferences (system & UI settings) and persists to file.
+func (cm *ConfigManager) UpdatePreferences(pref UserPreferences) error {
+	cm.mu.Lock()
+	cm.current.AutoStart = pref.AutoStart
+	cm.current.StartMinimized = pref.StartMinimized
+	if pref.LaunchOnStartup != cm.current.LaunchOnStartup {
+		_ = sysproxy.SetWindowsStartup(pref.LaunchOnStartup)
+	}
+	cm.current.LaunchOnStartup = pref.LaunchOnStartup
+	if pref.MemoryPolicy != "" {
+		cm.current.MemoryPolicy = pref.MemoryPolicy
+	}
+	if pref.UILayoutMode != "" {
+		cm.current.UILayoutMode = pref.UILayoutMode
+	}
+	cm.mu.Unlock()
+	return cm.Save()
+}
+
+// UpdateMemoryPolicy updates only the memory policy without modifying proxy settings.
+func (cm *ConfigManager) UpdateMemoryPolicy(policy string) error {
+	cm.mu.Lock()
+	cm.current.MemoryPolicy = policy
 	cm.mu.Unlock()
 	return cm.Save()
 }

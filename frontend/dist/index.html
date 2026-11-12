@@ -945,15 +945,31 @@
       for (const r of radios) {
         r.checked = (r.value === currentLayoutMode);
       }
-      // Sync memoryPolicy radio
-      const memRadios = document.getElementsByName("memoryPolicy");
-      for (const r of memRadios) {
-        r.checked = (r.value === (window.__currentMemoryPolicy || "none"));
+      // Sync preferences controls with confirmed saved preferences
+      if (window.__savedPrefs) {
+        document.getElementById("autoStartProxy").checked = !!window.__savedPrefs.autostart;
+        document.getElementById("startMinimized").checked = !!window.__savedPrefs.startMinimized;
+        document.getElementById("launchOnStartup").checked = !!window.__savedPrefs.launchOnStartup;
+        const memRadios = document.getElementsByName("memoryPolicy");
+        for (const r of memRadios) {
+          r.checked = (r.value === (window.__savedPrefs.memoryPolicy || "none"));
+        }
       }
       document.getElementById("prefModal").classList.add("active");
     }
 
     function closePrefModal() {
+      // Revert modal controls back to confirmed values so uncommitted changes are discarded
+      if (window.__savedPrefs) {
+        document.getElementById("autoStartProxy").checked = !!window.__savedPrefs.autostart;
+        document.getElementById("startMinimized").checked = !!window.__savedPrefs.startMinimized;
+        document.getElementById("launchOnStartup").checked = !!window.__savedPrefs.launchOnStartup;
+        const memRadios = document.getElementsByName("memoryPolicy");
+        for (const r of memRadios) {
+          r.checked = (r.value === (window.__savedPrefs.memoryPolicy || "none"));
+        }
+        applyLayoutMode(window.__savedPrefs.uiLayoutMode || "auto");
+      }
       document.getElementById("prefModal").classList.remove("active");
     }
 
@@ -964,8 +980,42 @@
     }
 
     async function savePrefAndClose() {
-      await saveConfig();
-      closePrefModal();
+      let memPolicy = "none";
+      const memRadios = document.getElementsByName("memoryPolicy");
+      for (const r of memRadios) {
+        if (r.checked) {
+          memPolicy = r.value;
+          break;
+        }
+      }
+
+      const prefPayload = {
+        autostart: document.getElementById("autoStartProxy").checked,
+        startMinimized: document.getElementById("startMinimized").checked,
+        launchOnStartup: document.getElementById("launchOnStartup").checked,
+        memoryPolicy: memPolicy,
+        uiLayoutMode: currentLayoutMode
+      };
+
+      try {
+        const res = await fetch(API_BASE + "/preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(prefPayload)
+        });
+        if (res.ok) {
+          window.__savedPrefs = { ...prefPayload };
+          window.__currentMemoryPolicy = memPolicy;
+          const txt = await res.text();
+          showToast(txt.trim() || "Preferences saved");
+        } else {
+          const txt = await res.text();
+          showToast("Error saving preferences: " + txt);
+        }
+      } catch (e) {
+        showToast("Error saving preferences: " + e.message);
+      }
+      document.getElementById("prefModal").classList.remove("active");
     }
 
     window.addEventListener("keydown", (e) => {
@@ -1052,17 +1102,32 @@
           document.getElementById("proxyUser").value = cfg.proxyUsername || "";
           document.getElementById("proxyPass").value = cfg.proxyPassword || "";
           document.getElementById("testUrl").value = cfg.proxyTestUrl || "https://example.com";
-          document.getElementById("autoStartProxy").checked = cfg.autostart ?? false;
-          document.getElementById("startMinimized").checked = cfg.startMinimized ?? false;
-          document.getElementById("launchOnStartup").checked = cfg.launchOnStartup ?? false;
           document.getElementById("allowLan").checked = cfg.allowLan ?? false;
+
           let policy = cfg.memoryPolicy || "none";
           if (policy === "minimize") policy = "hide";
+          const layout = cfg.uiLayoutMode || localStorage.getItem("gofoom_ui_layout_mode") || "auto";
+
+          window.__savedPrefs = {
+            autostart: cfg.autostart ?? false,
+            startMinimized: cfg.startMinimized ?? false,
+            launchOnStartup: cfg.launchOnStartup ?? false,
+            memoryPolicy: policy,
+            uiLayoutMode: layout
+          };
           window.__currentMemoryPolicy = policy;
+
+          // Apply saved preferences to modal inputs
+          document.getElementById("autoStartProxy").checked = window.__savedPrefs.autostart;
+          document.getElementById("startMinimized").checked = window.__savedPrefs.startMinimized;
+          document.getElementById("launchOnStartup").checked = window.__savedPrefs.launchOnStartup;
+
           const memRadios = document.getElementsByName("memoryPolicy");
           for (const r of memRadios) {
             r.checked = (r.value === policy);
           }
+
+          applyLayoutMode(layout);
           onProxyTypeChange();
           onUseCurrentCredsChange();
         }
@@ -1072,16 +1137,7 @@
     }
 
     async function saveConfig() {
-      let memPolicy = "none";
-      const memRadios = document.getElementsByName("memoryPolicy");
-      for (const r of memRadios) {
-        if (r.checked) {
-          memPolicy = r.value;
-          break;
-        }
-      }
-      window.__currentMemoryPolicy = memPolicy;
-
+      const sp = window.__savedPrefs || {};
       const cfg = {
         proxyType: document.getElementById("proxyType").value,
         localPort: parseInt(document.getElementById("localPort").value, 10),
@@ -1094,11 +1150,13 @@
         proxyUsername: document.getElementById("proxyUser").value,
         proxyPassword: document.getElementById("proxyPass").value,
         proxyTestUrl: document.getElementById("testUrl").value,
-        autostart: document.getElementById("autoStartProxy").checked,
-        startMinimized: document.getElementById("startMinimized").checked,
-        launchOnStartup: document.getElementById("launchOnStartup").checked,
         allowLan: document.getElementById("allowLan").checked,
-        memoryPolicy: memPolicy
+        // Preferences use confirmed values, protecting against uncommitted modal edits
+        autostart: sp.autostart ?? false,
+        startMinimized: sp.startMinimized ?? false,
+        launchOnStartup: sp.launchOnStartup ?? false,
+        memoryPolicy: sp.memoryPolicy || window.__currentMemoryPolicy || "none",
+        uiLayoutMode: sp.uiLayoutMode || currentLayoutMode || "auto"
       };
 
       try {

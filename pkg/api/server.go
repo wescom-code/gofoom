@@ -114,6 +114,7 @@ func (s *Server) Start() error {
 	mux.HandleFunc("/start", s.handleStart)
 	mux.HandleFunc("/stop", s.handleStop)
 	mux.HandleFunc("/config", s.handleConfig)
+	mux.HandleFunc("/preferences", s.handlePreferences)
 	mux.HandleFunc("/version", s.handleVersion)
 	mux.HandleFunc("/autodetect", s.handleAutodetect)
 	mux.HandleFunc("/validate", s.handleValidate)
@@ -240,13 +241,25 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		lanChanged := newCfg.AllowLan != cur.AllowLan
 		portChanged := newCfg.LocalPort != cur.LocalPort
+		proxySettingsChanged := newCfg.ProxyType != cur.ProxyType ||
+			newCfg.ProxyHost != cur.ProxyHost ||
+			newCfg.ProxyPort != cur.ProxyPort ||
+			newCfg.ProxyUsername != cur.ProxyUsername ||
+			(newCfg.ProxyPassword != "******" && newCfg.ProxyPassword != cur.ProxyPassword) ||
+			newCfg.LocalPort != cur.LocalPort ||
+			newCfg.AllowLan != cur.AllowLan ||
+			newCfg.ProxyTestURL != cur.ProxyTestURL ||
+			newCfg.UseCurrentCredentials != cur.UseCurrentCredentials ||
+			newCfg.HttpAuthProtocol != cur.HttpAuthProtocol ||
+			newCfg.PacFileLocation != cur.PacFileLocation ||
+			newCfg.BlacklistTimeout != cur.BlacklistTimeout
 
 		if err := s.configMgr.Update(newCfg); err != nil {
 			http.Error(w, fmt.Sprintf("Failed to save config: %v", err), http.StatusInternalServerError)
 			return
 		}
 
-		if s.proxyServer.IsRunning() {
+		if s.proxyServer.IsRunning() && proxySettingsChanged {
 			sc := s.configMgr.ToServerConfig()
 			if lanChanged || portChanged {
 				_ = s.proxyServer.Restart(sc)
@@ -263,6 +276,46 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 
 		_, _ = fmt.Fprintln(w, "Proxy configuration changed")
 	}
+}
+
+func (s *Server) handlePreferences(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		cur := s.configMgr.Get()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(config.UserPreferences{
+			AutoStart:       cur.AutoStart,
+			StartMinimized:  cur.StartMinimized,
+			LaunchOnStartup: cur.LaunchOnStartup,
+			MemoryPolicy:    cur.MemoryPolicy,
+			UILayoutMode:    cur.UILayoutMode,
+		})
+		return
+	}
+
+	if r.Method == http.MethodPost || r.Method == http.MethodPatch {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "Failed to read request body", http.StatusBadRequest)
+			return
+		}
+
+		var pref config.UserPreferences
+		if err := json.Unmarshal(body, &pref); err != nil {
+			http.Error(w, fmt.Sprintf("Invalid JSON: %v", err), http.StatusBadRequest)
+			return
+		}
+
+		if err := s.configMgr.UpdatePreferences(pref); err != nil {
+			http.Error(w, fmt.Sprintf("Failed to save preferences: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = fmt.Fprintln(w, "Preferences saved successfully")
+		return
+	}
+
+	http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 }
 
 func (s *Server) handleAutodetect(w http.ResponseWriter, r *http.Request) {

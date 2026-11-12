@@ -49,8 +49,16 @@ func main() {
 
 	// Setup shutdown handler
 	shutdownSignal := make(chan struct{})
+	var activeUI *ui.AppUI
 	onShutdown := func() {
-		close(shutdownSignal)
+		select {
+		case <-shutdownSignal:
+		default:
+			close(shutdownSignal)
+		}
+		if activeUI != nil {
+			activeUI.Quit()
+		}
 	}
 
 	// Start local API server (compatible with foomcli)
@@ -81,6 +89,7 @@ func main() {
 		}
 
 		appUI := ui.NewAppUI(proxySrv, cfgMgr, apiSrv, build.IconBytes, distFS)
+		activeUI = appUI
 		log.Printf("Launching Gofoom GUI (Wails v3)...")
 		startMinimized := *minimized || appCfg.StartMinimized
 		if err := appUI.Run(startMinimized); err != nil {
