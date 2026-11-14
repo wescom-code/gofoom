@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"gofoom/pkg/proxy"
@@ -55,11 +56,62 @@ func DefaultAppConfig() AppConfig {
 	}
 }
 
-// NewConfigManager initializes a config manager with a file path.
-func NewConfigManager(filePath string) *ConfigManager {
+func isSystemDir(dir string) bool {
+	clean := filepath.Clean(dir)
+	sysRoot := os.Getenv("SystemRoot")
+	if sysRoot != "" && strings.HasPrefix(strings.ToLower(clean), strings.ToLower(sysRoot)) {
+		return true
+	}
+	winDir := os.Getenv("windir")
+	if winDir != "" && strings.HasPrefix(strings.ToLower(clean), strings.ToLower(winDir)) {
+		return true
+	}
+	return false
+}
+
+// ResolveConfigPath resolves a configuration file path to an absolute path.
+// When Gofoom is started by Windows autostart (where working directory defaults to C:\Windows\System32),
+// this ensures gofoom.json is loaded from next to the executable instead of failing with Access Denied.
+func ResolveConfigPath(filePath string) string {
 	if filePath == "" {
 		filePath = "gofoom.json"
 	}
+	if filepath.IsAbs(filePath) {
+		return filepath.Clean(filePath)
+	}
+
+	cwd, cwdErr := os.Getwd()
+	// If CWD is valid and NOT a Windows system directory:
+	if cwdErr == nil && !isSystemDir(cwd) {
+		candidate := filepath.Join(cwd, filePath)
+		if _, err := os.Stat(candidate); err == nil {
+			return filepath.Clean(candidate)
+		}
+	}
+
+	// Fallback to checking next to the executable
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		candidate := filepath.Join(exeDir, filePath)
+		if _, err := os.Stat(candidate); err == nil {
+			return filepath.Clean(candidate)
+		}
+		// If neither exists yet (first run) and CWD is a system dir, create next to executable
+		if cwdErr != nil || isSystemDir(cwd) {
+			return filepath.Clean(candidate)
+		}
+	}
+
+	// Standard fallback
+	if abs, err := filepath.Abs(filePath); err == nil {
+		return filepath.Clean(abs)
+	}
+	return filepath.Clean(filePath)
+}
+
+// NewConfigManager initializes a config manager with a file path.
+func NewConfigManager(filePath string) *ConfigManager {
+	filePath = ResolveConfigPath(filePath)
 	def := DefaultAppConfig()
 	def.LaunchOnStartup = sysproxy.IsWindowsStartupEnabled()
 	cm := &ConfigManager{
@@ -68,6 +120,13 @@ func NewConfigManager(filePath string) *ConfigManager {
 	}
 	_ = cm.Load()
 	return cm
+}
+
+// FilePath returns the resolved absolute configuration file path.
+func (cm *ConfigManager) FilePath() string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+	return cm.filePath
 }
 
 // Load loads settings from file.

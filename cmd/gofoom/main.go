@@ -9,6 +9,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,6 +23,20 @@ import (
 )
 
 func main() {
+	// Ensure working directory is safe (not C:\Windows\System32 from Windows autostart)
+	if exePath, err := os.Executable(); err == nil {
+		exeDir := filepath.Dir(exePath)
+		if cwd, err := os.Getwd(); err == nil {
+			sysRoot := os.Getenv("SystemRoot")
+			winDir := os.Getenv("windir")
+			isSys := (sysRoot != "" && strings.HasPrefix(strings.ToLower(cwd), strings.ToLower(sysRoot))) ||
+				(winDir != "" && strings.HasPrefix(strings.ToLower(cwd), strings.ToLower(winDir)))
+			if isSys {
+				_ = os.Chdir(exeDir)
+			}
+		}
+	}
+
 	guiMode := flag.Bool("gui", true, "Launch in GUI & System Tray mode (default: true)")
 	headless := flag.Bool("headless", false, "Run in headless daemon mode without GUI")
 	minimized := flag.Bool("minimized", false, "Start minimized to system tray (GUI mode)")
@@ -36,6 +52,7 @@ func main() {
 
 	// Initialize configuration
 	cfgMgr := config.NewConfigManager(*configFile)
+	log.Printf("Loaded configuration from: %s", cfgMgr.FilePath())
 	appCfg := cfgMgr.Get()
 
 	// Check CLI port override

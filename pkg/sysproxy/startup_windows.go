@@ -63,7 +63,8 @@ func SetWindowsStartup(enable bool) error {
 		if err != nil {
 			return err
 		}
-		cmd := `"` + exePath + `" -minimized`
+		configPath := filepath.Join(filepath.Dir(exePath), "gofoom.json")
+		cmd := fmt.Sprintf(`"%s" -config "%s" -minimized`, exePath, configPath)
 		return k.SetStringValue(name, cmd)
 	}
 
