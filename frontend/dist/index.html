@@ -910,6 +910,9 @@
       currentTab = tab;
       localStorage.setItem("gofoom_active_tab", tab);
       updateTabVisibility();
+      if (tab === "logs") {
+        updateLogs();
+      }
     }
 
     function updateTabVisibility() {
@@ -1024,14 +1027,29 @@
       }
     });
 
-    function addLog(ts, level, msg) {
-      const box = document.getElementById("logBox");
+    let lastRenderedLogKey = "";
+
+    function isLogsVisible() {
+      if (document.hidden) return false;
+      if (currentLayoutMode === "stacked" && currentTab !== "logs") return false;
+      return true;
+    }
+
+    function createLogLineElement(ts, level, msg) {
       const line = document.createElement("div");
       line.className = "log-line";
       let lvlClass = "log-info";
       if (level === "ERROR") lvlClass = "log-err";
       if (level === "WARN") lvlClass = "log-warn";
       line.innerHTML = `<span class="log-time">[${ts}]</span> <span class="${lvlClass}">[${level}]</span> ${msg}`;
+      return line;
+    }
+
+    function addLog(ts, level, msg) {
+      if (!isLogsVisible()) return;
+      const box = document.getElementById("logBox");
+      if (!box) return;
+      const line = createLogLineElement(ts, level, msg);
       box.appendChild(line);
       while (box.children.length > 150) {
         box.removeChild(box.firstChild);
@@ -1040,7 +1058,9 @@
     }
 
     function clearLogs() {
-      document.getElementById("logBox").innerHTML = "";
+      const box = document.getElementById("logBox");
+      if (box) box.replaceChildren();
+      lastRenderedLogKey = "";
     }
 
     async function clearBlacklist() {
@@ -1172,6 +1192,7 @@
       }
     }
 
+    let lastRunningState = null;
     async function updateStatus() {
       try {
         const res = await fetch(API_BASE + "/status");
@@ -1179,18 +1200,22 @@
           const text = await res.text();
           const running = text.includes("up");
           isRunning = running;
-          const badge = document.getElementById("statusBadge");
-          const btn = document.getElementById("btnToggleServer");
-          if (running) {
-            badge.className = "status-badge status-running";
-            document.getElementById("statusText").innerText = "RUNNING";
-            btn.className = "btn btn-danger btn-sm";
-            btn.innerText = "Stop Server";
-          } else {
-            badge.className = "status-badge status-stopped";
-            document.getElementById("statusText").innerText = "STOPPED";
-            btn.className = "btn btn-success btn-sm";
-            btn.innerText = "Start Server";
+          if (running !== lastRunningState) {
+            lastRunningState = running;
+            const badge = document.getElementById("statusBadge");
+            const btn = document.getElementById("btnToggleServer");
+            const txt = document.getElementById("statusText");
+            if (running) {
+              badge.className = "status-badge status-running";
+              txt.textContent = "RUNNING";
+              btn.className = "btn btn-danger btn-sm";
+              btn.textContent = "Stop Server";
+            } else {
+              badge.className = "status-badge status-stopped";
+              txt.textContent = "STOPPED";
+              btn.className = "btn btn-success btn-sm";
+              btn.textContent = "Start Server";
+            }
           }
         }
       } catch (e) {}
@@ -1216,12 +1241,27 @@
       return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
     }
 
+    let lastStats = {};
     function renderStats(st) {
       if (!st) return;
-      document.getElementById("statActive").innerText = st.activeConnections ?? 0;
-      document.getElementById("statRequests").innerText = st.totalRequests ?? 0;
-      document.getElementById("statIn").innerText = formatBytes(st.bytesReceived ?? 0);
-      document.getElementById("statOut").innerText = formatBytes(st.bytesSent ?? 0);
+      if (st.activeConnections !== lastStats.activeConnections) {
+        document.getElementById("statActive").textContent = st.activeConnections ?? 0;
+        lastStats.activeConnections = st.activeConnections;
+      }
+      if (st.totalRequests !== lastStats.totalRequests) {
+        document.getElementById("statRequests").textContent = st.totalRequests ?? 0;
+        lastStats.totalRequests = st.totalRequests;
+      }
+      const formattedIn = formatBytes(st.bytesReceived ?? 0);
+      if (formattedIn !== lastStats.formattedIn) {
+        document.getElementById("statIn").textContent = formattedIn;
+        lastStats.formattedIn = formattedIn;
+      }
+      const formattedOut = formatBytes(st.bytesSent ?? 0);
+      if (formattedOut !== lastStats.formattedOut) {
+        document.getElementById("statOut").textContent = formattedOut;
+        lastStats.formattedOut = formattedOut;
+      }
     }
 
     async function updateStats() {
@@ -1235,30 +1275,39 @@
     }
 
     async function updateLogs() {
+      if (!isLogsVisible()) return;
       try {
         const res = await fetch(API_BASE + "/logs");
         if (res.ok) {
           const logs = await res.json();
-          if (Array.isArray(logs) && logs.length > 0) {
-            const box = document.getElementById("logBox");
-            box.innerHTML = "";
-            logs.forEach(item => {
-              const line = document.createElement("div");
-              line.className = "log-line";
-              let lvlClass = "log-info";
-              if (item.level === "ERROR") lvlClass = "log-err";
-              if (item.level === "WARN") lvlClass = "log-warn";
-              const time = new Date(item.timestamp).toLocaleTimeString();
-              let target = item.target || "";
-              let method = item.method || "";
-              let status = item.status || "";
-              let msg = item.message || "";
-              let logText = method ? `${method} ${target} -> ${status} (${msg})` : msg;
-              line.innerHTML = `<span class="log-time">[${time}]</span> <span class="${lvlClass}">[${item.level || "INFO"}]</span> ${logText}`;
-              box.appendChild(line);
-            });
-            box.scrollTop = box.scrollHeight;
+          if (!Array.isArray(logs) || logs.length === 0) return;
+
+          const latest = logs[logs.length - 1];
+          const currentKey = `${logs.length}:${latest.timestamp}:${latest.target}:${latest.status}`;
+          // If the log list hasn't changed since last render, skip DOM manipulation entirely
+          if (currentKey === lastRenderedLogKey) {
+            return;
           }
+          lastRenderedLogKey = currentKey;
+
+          const box = document.getElementById("logBox");
+          if (!box) return;
+
+          // Build lines in a DocumentFragment for zero reflow/layout overhead
+          const fragment = document.createDocumentFragment();
+          logs.forEach(item => {
+            const time = new Date(item.timestamp).toLocaleTimeString();
+            let target = item.target || "";
+            let method = item.method || "";
+            let status = item.status || "";
+            let msg = item.message || "";
+            let logText = method ? `${method} ${target} -> ${status} (${msg})` : msg;
+            const line = createLogLineElement(time, item.level || "INFO", logText);
+            fragment.appendChild(line);
+          });
+
+          box.replaceChildren(fragment);
+          box.scrollTop = box.scrollHeight;
         }
       } catch (e) {}
     }
@@ -1305,9 +1354,17 @@
     let logsTimer = null;
 
     function startTimers() {
-      if (!statusTimer) statusTimer = setInterval(updateStatus, 1000);
-      if (!statsTimer) statsTimer = setInterval(updateStats, 1000);
-      if (!logsTimer) logsTimer = setInterval(updateLogs, 1000);
+      // Status poll: 3000ms (state rarely changes)
+      if (!statusTimer) statusTimer = setInterval(updateStatus, 3000);
+
+      // If Wails native event stream is active, stats & logs are pushed via event bus.
+      // Use relaxed 5000ms heartbeat. If external browser without Wails, poll every 1000ms.
+      const hasWailsEvents = !!(window.wails && window.wails.Events);
+      const statsInterval = hasWailsEvents ? 5000 : 1000;
+      const logsInterval = hasWailsEvents ? 5000 : 1000;
+
+      if (!statsTimer) statsTimer = setInterval(updateStats, statsInterval);
+      if (!logsTimer) logsTimer = setInterval(updateLogs, logsInterval);
     }
 
     function stopTimers() {
@@ -1351,7 +1408,9 @@
       loadConfig();
       updateStatus();
       updateStats();
-      updateLogs();
+      if (isLogsVisible()) {
+        updateLogs();
+      }
       startTimers();
 
       // Pause intervals when window is hidden/minimized to system tray to save WebView2 memory & CPU
@@ -1361,7 +1420,9 @@
         } else {
           updateStatus();
           updateStats();
-          updateLogs();
+          if (isLogsVisible()) {
+            updateLogs();
+          }
           startTimers();
         }
       });

@@ -11,7 +11,7 @@ const (
 	Name = "Gofoom"
 
 	// Version of the application (SemVer format: Major.Minor.Patch)
-	Version = "1.3.0"
+	Version = "1.3.1"
 
 	// Description of the application
 	Description = "High-Performance Proxy Facade with PAC, SOCKS5 & Fallback"
