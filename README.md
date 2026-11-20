@@ -8,7 +8,9 @@
 
 **Gofoom** is a blazing-fast, ultra-lightweight HTTP(S) proxy server facade for NTLM, Kerberos, SOCKS, and Proxy Auto-Configuration (PAC) proxies. It is a 1:1 modern rewrite of [Winfoom](https://github.com/ecovaci/winfoom) in Go and Wails v3.
 
-It sits between your applications and corporate authenticated proxies, seamlessly handling complex handshakes and Integrated Windows Authentication (SSO), so your tools (Git, curl, Docker, npm, browsers) only deal with a plain unauthenticated local proxy on port `3129`.
+It sits between your applications and corporate authenticated proxies, seamlessly handling complex handshakes and Integrated Windows Authentication (SSO), so your tools (Git, curl, Docker, npm, browsers) only deal with a plain unauthenticated local proxy on the port you choose.
+
+<img width="713" height="585" alt="image" src="https://github.com/user-attachments/assets/e2a6b0d0-2407-4226-a92b-c65a2525bf89" />
 
 ---
 
